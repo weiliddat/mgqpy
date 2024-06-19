@@ -18,3 +18,4 @@ testpaths = ["tests"]
 
 [tool.flit.sdist]
 include = ["mgqpy/"]
+exclude = ["tests/"]

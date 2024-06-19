@@ -1,6 +1,6 @@
 """mongo query as a python filter predicate"""
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 # Terminology
 #
