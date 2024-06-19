@@ -17,4 +17,4 @@ pythonpath = ["."]
 testpaths = ["tests"]
 
 [tool.flit.sdist]
-include = ["mgqpy/*"]
+include = ["mgqpy/"]
