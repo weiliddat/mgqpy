@@ -1,3 +1,7 @@
+"""mongo query as a python filter predicate"""
+
+__version__ = "0.1"
+
 # Terminology
 #
 # Query refers to the document that is passed to the compiler / mongodb find that holds
