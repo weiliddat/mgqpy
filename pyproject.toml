@@ -6,6 +6,7 @@ build-backend = "flit_core.buildapi"
 name = "mgqpy"
 authors = [{ name = "Chiawei Ong", email = "ongchiawei@gmail.com" }]
 license = { file = "LICENSE" }
+readme = "README.md"
 classifiers = ["License :: OSI Approved :: MIT License"]
 dynamic = ["version", "description"]
 
