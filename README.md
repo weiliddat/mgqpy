@@ -2,6 +2,10 @@
 
 mongo query as a python filter predicate
 
+```sh
+pip install mgqpy
+```
+
 ```python
 from mgqpy import Query
 
