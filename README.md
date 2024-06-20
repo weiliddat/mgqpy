@@ -28,7 +28,7 @@ Comparison query operators
 - [x] \$eq
 - [x] \$eq (implicit), e.g. `{"foo": None}`
 - [ ] \$ne
-- [ ] \$gt
+- [x] \$gt
 - [ ] \$gte
 - [ ] \$lt
 - [ ] \$lte
