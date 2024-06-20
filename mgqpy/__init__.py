@@ -25,6 +25,8 @@ __version__ = "0.1.6"
 #
 # Doc refers to the object that is passed to the compiled filter function
 
+from numbers import Number
+import operator
 from typing import List
 
 cmp_ops = {
@@ -60,6 +62,8 @@ class Query:
             if is_all_ops:
                 if "$eq" in exp_or_ov:
                     results.append(_match_eq(doc, path_parts, exp_or_ov["$eq"]))
+                if "$gt" in exp_or_ov:
+                    results.append(_match_gt(doc, path_parts, exp_or_ov["$gt"]))
             else:
                 results.append(_match_eq(doc, path_parts, exp_or_ov))
 
@@ -88,3 +92,33 @@ def _match_eq(doc: dict, path: List[str], ov) -> bool:
         return any([_match_eq(d, path, ov) for d in doc])
 
     return ov is None
+
+
+def _match_gt(doc, path: List[str], ov) -> bool:
+    if len(path) == 0:
+        if isinstance(doc, list) and any([_match_gt(d, path, ov) for d in doc]):
+            return True
+
+        if isinstance(doc, Number) and isinstance(ov, Number):
+            return operator.gt(doc, ov)
+
+        if isinstance(doc, str) and isinstance(ov, str):
+            return operator.gt(doc, ov)
+
+        return False
+
+    key = path[0]
+    rest = path[1:]
+
+    if isinstance(doc, dict) and key in doc:
+        return _match_gt(doc[key], rest, ov)
+
+    if isinstance(doc, list) and key.isdigit():
+        idx = int(key)
+        if idx < len(doc):
+            return _match_gt(doc[idx], rest, ov)
+
+    if isinstance(doc, list):
+        return any([_match_gt(d, path, ov) for d in doc])
+
+    return False
