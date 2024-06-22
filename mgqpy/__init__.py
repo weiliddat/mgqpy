@@ -64,6 +64,8 @@ class Query:
                     results.append(_match_eq(doc, path_parts, exp_or_ov["$eq"]))
                 if "$gt" in exp_or_ov:
                     results.append(_match_gt(doc, path_parts, exp_or_ov["$gt"]))
+                if "$gte" in exp_or_ov:
+                    results.append(_match_gte(doc, path_parts, exp_or_ov["$gte"]))
             else:
                 results.append(_match_eq(doc, path_parts, exp_or_ov))
 
@@ -120,5 +122,41 @@ def _match_gt(doc, path: List[str], ov) -> bool:
 
     if isinstance(doc, list):
         return any([_match_gt(d, path, ov) for d in doc])
+
+    return False
+
+
+def _match_gte(doc, path: List[str], ov) -> bool:
+    if len(path) == 0:
+        if isinstance(doc, list) and any([_match_gte(d, path, ov) for d in doc]):
+            return True
+
+        if isinstance(doc, Number) and isinstance(ov, Number):
+            return operator.ge(doc, ov)
+
+        if isinstance(doc, str) and isinstance(ov, str):
+            return operator.ge(doc, ov)
+
+        if doc is None and ov is None:
+            return True
+
+        return False
+
+    key = path[0]
+    rest = path[1:]
+
+    if isinstance(doc, dict) and key in doc:
+        return _match_gte(doc[key], rest, ov)
+
+    if isinstance(doc, list) and key.isdigit():
+        idx = int(key)
+        if idx < len(doc):
+            return _match_gte(doc[idx], rest, ov)
+
+    if isinstance(doc, list):
+        return any([_match_gte(d, path, ov) for d in doc])
+
+    if ov is None:
+        return True
 
     return False
