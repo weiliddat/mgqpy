@@ -131,11 +131,23 @@ def _match_gte(doc, path: List[str], ov) -> bool:
         if isinstance(doc, list) and any([_match_gte(d, path, ov) for d in doc]):
             return True
 
+        if isinstance(doc, list) and isinstance(ov, list):
+            if doc == ov:
+                return True
+            if len(doc) > len(ov):
+                return True
+
         if isinstance(doc, Number) and isinstance(ov, Number):
             return operator.ge(doc, ov)
 
         if isinstance(doc, str) and isinstance(ov, str):
             return operator.ge(doc, ov)
+
+        if isinstance(doc, dict) and isinstance(ov, dict):
+            if doc == ov:
+                return True
+            if len(doc) > len(ov):
+                return True
 
         if doc is None and ov is None:
             return True
