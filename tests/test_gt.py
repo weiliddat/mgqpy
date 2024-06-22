@@ -159,6 +159,35 @@ testcases = [
             {"a": [{"b": [{"c": 2}]}]},
         ],
     ),
+    (
+        "nested object path, object comparison",
+        {"foo.bar": {"$gt": {"baz": "qux"}}},
+        [
+            {"foo": {"bar": {"baz": "qux"}}},
+            {"foo": {"bar": {"baz": "qux", "bla": "jaz"}}},
+            {},
+            {"foo": "bar"},
+            {"foo": {"bar": "baz"}},
+        ],
+        [
+            {"foo": {"bar": {"baz": "qux", "bla": "jaz"}}},
+        ],
+    ),
+    (
+        "nested object path, list comparison",
+        {"foo.bar": {"$gt": ["bar", "baz"]}},
+        [
+            {"foo": {"bar": ["bar"]}},
+            {"foo": {"bar": ["bar", "baz"]}},
+            {"foo": {"bar": ["bar", "baz", "qux"]}},
+            {},
+            {"foo": "bar"},
+            {"foo": {"bar": "baz"}},
+        ],
+        [
+            {"foo": {"bar": ["bar", "baz", "qux"]}},
+        ],
+    ),
 ]
 
 

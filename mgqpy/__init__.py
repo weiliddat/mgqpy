@@ -101,6 +101,20 @@ def _match_gt(doc, path: List[str], ov) -> bool:
         if isinstance(doc, list) and any([_match_gt(d, path, ov) for d in doc]):
             return True
 
+        if isinstance(doc, list) and isinstance(ov, list):
+            if sorted(doc, reverse=True) > sorted(ov, reverse=True):
+                return True
+
+        if isinstance(doc, dict) and isinstance(ov, dict):
+            for key in ov:
+                if key not in doc:
+                    return False
+                if doc[key] != ov[key]:
+                    return False
+            for key in doc:
+                if key not in ov:
+                    return True
+
         if isinstance(doc, Number) and isinstance(ov, Number):
             return operator.gt(doc, ov)
 
@@ -137,17 +151,17 @@ def _match_gte(doc, path: List[str], ov) -> bool:
             if len(doc) > len(ov):
                 return True
 
-        if isinstance(doc, Number) and isinstance(ov, Number):
-            return operator.ge(doc, ov)
-
-        if isinstance(doc, str) and isinstance(ov, str):
-            return operator.ge(doc, ov)
-
         if isinstance(doc, dict) and isinstance(ov, dict):
             if doc == ov:
                 return True
             if len(doc) > len(ov):
                 return True
+
+        if isinstance(doc, Number) and isinstance(ov, Number):
+            return operator.ge(doc, ov)
+
+        if isinstance(doc, str) and isinstance(ov, str):
+            return operator.ge(doc, ov)
 
         if doc is None and ov is None:
             return True

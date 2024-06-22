@@ -182,7 +182,7 @@ testcases = [
         ],
     ),
     (
-        "nested object path, object comparison",
+        "nested object path, list comparison",
         {"foo.bar": {"$gte": ["bar", "baz"]}},
         [
             {"foo": {"bar": ["bar"]}},
