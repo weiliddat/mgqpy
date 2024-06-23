@@ -1,6 +1,8 @@
-import pytest
-from mgqpy import Query
+import copy
 
+import pytest
+
+from mgqpy import Query
 
 testcases = [
     (
@@ -198,9 +200,10 @@ testcases = [
 @pytest.mark.parametrize("name,query,input,expected", testcases)
 def test_mgqpy_eq(test_db, name, query, input, expected):
     q = Query(query)
-    actual = filter(q.match, input)
-    assert list(actual) == expected, name
 
-    test_db.insert_many(input)
+    test_db.insert_many(copy.deepcopy(input))
     mongo_expected = test_db.find(q._query, projection={"_id": False})
     assert list(mongo_expected) == expected, name
+
+    actual = filter(q.match, input)
+    assert list(actual) == expected, name
