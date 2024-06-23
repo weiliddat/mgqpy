@@ -184,13 +184,17 @@ testcases = [
         {"foo.bar": {"$gt": ["bar", "baz"]}},
         [
             {"foo": {"bar": ["bar"]}},
+            {"foo": {"bar": ["zzz"]}},
             {"foo": {"bar": ["bar", "baz"]}},
+            {"foo": {"bar": ["baz", "bar"]}},
             {"foo": {"bar": ["bar", "baz", "qux"]}},
             {},
             {"foo": "bar"},
             {"foo": {"bar": "baz"}},
         ],
         [
+            {"foo": {"bar": ["zzz"]}},
+            {"foo": {"bar": ["baz", "bar"]}},
             {"foo": {"bar": ["bar", "baz", "qux"]}},
         ],
     ),

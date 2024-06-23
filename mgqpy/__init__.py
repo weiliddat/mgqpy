@@ -94,7 +94,10 @@ def _match_eq(doc: dict, path: List[str], ov) -> bool:
     if isinstance(doc, list):
         return any([_match_eq(d, path, ov) for d in doc])
 
-    return ov is None
+    if ov is None:
+        return True
+
+    return False
 
 
 def _match_gt(doc, path: List[str], ov) -> bool:
@@ -103,7 +106,7 @@ def _match_gt(doc, path: List[str], ov) -> bool:
             return True
 
         if isinstance(doc, list) and isinstance(ov, list):
-            if sorted(doc, reverse=True) > sorted(ov, reverse=True):
+            if doc > ov:
                 return True
 
         if isinstance(doc, dict) and isinstance(ov, dict):
@@ -150,9 +153,7 @@ def _match_gte(doc, path: List[str], ov) -> bool:
             return True
 
         if isinstance(doc, list) and isinstance(ov, list):
-            if doc == ov:
-                return True
-            if len(doc) > len(ov):
+            if doc >= ov:
                 return True
 
         if isinstance(doc, dict) and isinstance(ov, dict):
