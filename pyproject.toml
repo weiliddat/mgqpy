@@ -19,4 +19,4 @@ testpaths = ["tests"]
 
 [tool.flit.sdist]
 include = ["mgqpy/"]
-exclude = ["tests/", "requirements-dev.txt"]
+exclude = ["tests/", "requirements-dev.txt", "compose.yml"]
