@@ -25,8 +25,9 @@ __version__ = "0.1.7"
 #
 # Doc refers to the object that is passed to the compiled filter function
 
-from numbers import Number
 import operator
+from itertools import zip_longest
+from numbers import Number
 from typing import List
 
 cmp_ops = {
@@ -106,14 +107,17 @@ def _match_gt(doc, path: List[str], ov) -> bool:
                 return True
 
         if isinstance(doc, dict) and isinstance(ov, dict):
-            for key in ov:
-                if key not in doc:
+            keys = zip_longest(doc.keys(), ov.keys())
+            for doc_key, ov_key in keys:
+                if doc_key is None:
                     return False
-                if doc[key] != ov[key]:
-                    return False
-            for key in doc:
-                if key not in ov:
+                if ov_key is None:
                     return True
+                if doc_key != ov_key:
+                    return doc_key > ov_key
+                if doc_key == ov_key:
+                    if doc[doc_key] > ov[ov_key]:
+                        return True
 
         if isinstance(doc, Number) and isinstance(ov, Number):
             return operator.gt(doc, ov)
@@ -152,10 +156,17 @@ def _match_gte(doc, path: List[str], ov) -> bool:
                 return True
 
         if isinstance(doc, dict) and isinstance(ov, dict):
-            if doc == ov:
-                return True
-            if len(doc) > len(ov):
-                return True
+            keys = zip_longest(doc.keys(), ov.keys())
+            for doc_key, ov_key in keys:
+                if doc_key is None:
+                    return False
+                if ov_key is None:
+                    return True
+                if doc_key != ov_key:
+                    return doc_key > ov_key
+                if doc_key == ov_key:
+                    if doc[doc_key] >= ov[ov_key]:
+                        return True
 
         if isinstance(doc, Number) and isinstance(ov, Number):
             return operator.ge(doc, ov)

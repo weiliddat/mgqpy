@@ -170,8 +170,11 @@ testcases = [
         "nested object path, object comparison",
         {"foo.bar": {"$gte": {"baz": "qux"}}},
         [
-            {"foo": {"bar": {"bla": "jaz"}}},
+            {"foo": {"bar": {"baa": "zap"}}},
+            {"foo": {"bar": {"baz": "bux"}}},
             {"foo": {"bar": {"baz": "qux"}}},
+            {"foo": {"bar": {"baz": "zap"}}},
+            {"foo": {"bar": {"bla": "jaz"}}},
             {"foo": {"bar": {"baz": "qux", "bla": "jaz"}}},
             {},
             {"foo": "bar"},
@@ -179,6 +182,8 @@ testcases = [
         ],
         [
             {"foo": {"bar": {"baz": "qux"}}},
+            {"foo": {"bar": {"baz": "zap"}}},
+            {"foo": {"bar": {"bla": "jaz"}}},
             {"foo": {"bar": {"baz": "qux", "bla": "jaz"}}},
         ],
     ),
@@ -202,7 +207,7 @@ testcases = [
 
 
 @pytest.mark.parametrize("name,query,input,expected", testcases)
-def test_mgqpy_gt(test_db, name, query, input, expected):
+def test_mgqpy_gte(test_db, name, query, input, expected):
     q = Query(query)
     actual = filter(q.match, input)
     assert list(actual) == expected, name
