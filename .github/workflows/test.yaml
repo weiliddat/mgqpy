@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  runs-on: ubuntu-latest
-
   test:
+    runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
