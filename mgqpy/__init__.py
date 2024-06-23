@@ -25,6 +25,7 @@ __version__ = "0.3.1"
 #
 # Doc refers to the object that is passed to the compiled filter function
 
+import math
 import operator
 from itertools import zip_longest
 from numbers import Number
@@ -43,6 +44,7 @@ cond_ops = {
     "$not",
     "$regex",
     "$options",
+    "$mod",
 }
 
 query_ops = {
@@ -108,6 +110,11 @@ def match_cond(query, doc):
                         "$options": exp_or_ov.get("$options", ""),
                     }
                     results.append(_match_regex(doc, path_parts, ov))
+                if "$mod" in exp_or_ov:
+                    if len(exp_or_ov["$mod"]) == 2:
+                        results.append(_match_mod(doc, path_parts, exp_or_ov["$mod"]))
+                    else:
+                        raise ValueError("$mod must be an array of two values")
             else:
                 results.append(_match_eq(doc, path_parts, exp_or_ov))
 
@@ -442,5 +449,36 @@ def _match_lte(doc, path: List[str], ov) -> bool:
 
     if ov is None:
         return True
+
+    return False
+
+
+def _match_mod(doc, path: List[str], ov) -> bool:
+    if len(path) == 0:
+        if isinstance(doc, list) and any([_match_mod(d, path, ov) for d in doc]):
+            return True
+
+        if not isinstance(doc, Number):
+            return False
+
+        divisor = math.floor(ov[0])
+        expected_remainer = math.floor(ov[1])
+        doc_remainer = math.floor(doc % divisor)
+
+        return doc_remainer == expected_remainer
+
+    key = path[0]
+    rest = path[1:]
+
+    if isinstance(doc, dict) and key in doc:
+        return _match_mod(doc[key], rest, ov)
+
+    if isinstance(doc, list) and key.isdigit():
+        idx = int(key)
+        if idx < len(doc):
+            return _match_mod(doc[idx], rest, ov)
+
+    if isinstance(doc, list):
+        return any([_match_mod(d, path, ov) for d in doc])
 
     return False
