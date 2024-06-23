@@ -16,6 +16,7 @@ Home = "https://github.com/weiliddat/mgqpy"
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+addopts = ["--benchmark-disable", "--benchmark-autosave"]
 
 [tool.flit.sdist]
 include = ["mgqpy/"]

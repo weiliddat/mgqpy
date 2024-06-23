@@ -263,12 +263,12 @@ testcases = [
 
 
 @pytest.mark.parametrize("name,query,input,expected", testcases)
-def test_mgqpy_gte(test_db, name, query, input, expected):
+def test_mgqpy_gte(test_db, benchmark, name, query, input, expected):
     q = Query(query)
 
     test_db.insert_many(copy.deepcopy(input))
     mongo_expected = test_db.find(q._query, projection={"_id": False})
     assert list(mongo_expected) == expected, name
 
-    actual = filter(q.match, input)
+    actual = benchmark(filter, q.match, input)
     assert list(actual) == expected, name
