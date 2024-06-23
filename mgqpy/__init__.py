@@ -39,12 +39,12 @@ cmp_ops = {
     "$lte",
     "$ne",
     "$nin",
+    "$not",
 }
 
 log_ops = {
     "$and",
     "$or",
-    "$not",
     "$nor",
 }
 
@@ -55,9 +55,7 @@ class Query:
         pass
 
     def match(self, doc) -> bool:
-        results = match_cond(self._query, doc)
-
-        return all(results)
+        return match_cond(self._query, doc)
 
 
 def match_cond(query, doc):
@@ -67,15 +65,11 @@ def match_cond(query, doc):
         if isinstance(path, str) and path in log_ops:
             if path == "$and":
                 for cond in query[path]:
-                    results.append(all(match_cond(cond, doc)))
+                    results.append(match_cond(cond, doc))
             if path == "$or":
-                results.append(
-                    any([all(match_cond(cond, doc)) for cond in query[path]])
-                )
-            # if path == "$not":
-            #     results.append(not match_cond(query[path], doc))
-            # if path == "$nor":
-            #     results.append(not any(match_cond(query[path], doc)))
+                results.append(any([match_cond(cond, doc) for cond in query[path]]))
+            if path == "$nor":
+                results.append(not any([match_cond(cond, doc) for cond in query[path]]))
         else:
             exp_or_ov = query[path]
             is_all_ops = (
@@ -103,10 +97,12 @@ def match_cond(query, doc):
                     results.append(_match_in(doc, path_parts, exp_or_ov["$in"]))
                 if "$nin" in exp_or_ov:
                     results.append(_match_nin(doc, path_parts, exp_or_ov["$nin"]))
+                if "$not" in exp_or_ov:
+                    results.append(not match_cond({path: exp_or_ov["$not"]}, doc))
             else:
                 results.append(_match_eq(doc, path_parts, exp_or_ov))
 
-    return results
+    return all(results)
 
 
 def _match_eq(doc: dict, path: List[str], ov) -> bool:
