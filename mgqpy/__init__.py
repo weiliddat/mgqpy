@@ -31,7 +31,7 @@ from numbers import Number
 import re
 from typing import List
 
-cmp_ops = {
+cond_ops = {
     "$eq",
     "$gt",
     "$gte",
@@ -45,7 +45,7 @@ cmp_ops = {
     "$options",
 }
 
-log_ops = {
+query_ops = {
     "$and",
     "$or",
     "$nor",
@@ -65,7 +65,7 @@ def match_cond(query, doc):
     results: List[bool] = []
 
     for path in query:
-        if isinstance(path, str) and path in log_ops:
+        if isinstance(path, str) and path in query_ops:
             if path == "$and":
                 for cond in query[path]:
                     results.append(match_cond(cond, doc))
@@ -78,7 +78,7 @@ def match_cond(query, doc):
             is_all_ops = (
                 exp_or_ov
                 and isinstance(exp_or_ov, dict)
-                and all(key in cmp_ops for key in exp_or_ov.keys())
+                and all(key in cond_ops for key in exp_or_ov.keys())
             )
 
             path_parts = path.split(".")
