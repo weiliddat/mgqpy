@@ -47,12 +47,12 @@ Logical query operators
 - [x] \$and (implicit), e.g. `{"foo": 1, "bar": "baz"}`
 - [x] \$or
 - [x] \$not
-- [ ] \$nor
+- [x] \$nor
 
 Evaluation query operators
 
 - [x] \$regex
-- [ ] \$regex (implicit), e.g. python re
+- [ ] \$regex (implicit), e.g. `{"foo": re.compile('^bar')}`
 - [ ] \$mod
 
 Array query operators
