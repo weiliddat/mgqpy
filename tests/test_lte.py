@@ -222,6 +222,31 @@ testcases = [
         ],
     ),
     (
+        "nested object path, object comparison many keys",
+        {"foo.bar": {"$lte": {"a": "b", "c": "d"}}},
+        [
+            {"foo": {"bar": {}}},
+            {"foo": {"bar": {"a": "a"}}},
+            {"foo": {"bar": {"a": "b"}}},
+            {"foo": {"bar": {"a": "c"}}},
+            {"foo": {"bar": {"b": "a"}}},
+            {"foo": {"bar": {"a": "b", "b": "a"}}},
+            {"foo": {"bar": {"a": "b", "c": "c"}}},
+            {"foo": {"bar": {"a": "b", "c": "d"}}},
+            {"foo": {"bar": {"a": "b", "c": "e"}}},
+            {"foo": {"bar": {"a": "b", "d": "a"}}},
+            {"foo": {"bar": {"a": "b", "c": "d", "e": "f"}}},
+        ],
+        [
+            {"foo": {"bar": {}}},
+            {"foo": {"bar": {"a": "a"}}},
+            {"foo": {"bar": {"a": "b"}}},
+            {"foo": {"bar": {"a": "b", "b": "a"}}},
+            {"foo": {"bar": {"a": "b", "c": "c"}}},
+            {"foo": {"bar": {"a": "b", "c": "d"}}},
+        ],
+    ),
+    (
         "nested object path, list comparison",
         {"foo.bar": {"$lte": ["bar", "baz"]}},
         [
