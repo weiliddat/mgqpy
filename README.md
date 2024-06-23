@@ -53,7 +53,7 @@ Evaluation query operators
 
 - [x] \$regex
 - [x] \$regex (implicit), e.g. `{"foo": re.compile('^bar')}`
-- [ ] \$mod
+- [x] \$mod
 
 Array query operators
 

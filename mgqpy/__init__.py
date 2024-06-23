@@ -1,6 +1,6 @@
 """mongo query as a predicate function"""
 
-__version__ = "0.3.1"
+__version__ = "0.4.0"
 
 # Terminology
 #
