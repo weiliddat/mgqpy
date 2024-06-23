@@ -68,8 +68,10 @@ def match_cond(query, doc):
             if path == "$and":
                 for cond in query[path]:
                     results.append(all(match_cond(cond, doc)))
-            # if path == "$or":
-            #     results.append(any(match_cond(query[path], doc)))
+            if path == "$or":
+                results.append(
+                    any([all(match_cond(cond, doc)) for cond in query[path]])
+                )
             # if path == "$not":
             #     results.append(not match_cond(query[path], doc))
             # if path == "$nor":

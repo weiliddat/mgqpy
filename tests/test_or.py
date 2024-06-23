@@ -29,8 +29,13 @@ testcases = [
         "nested $or",
         {
             "$or": [
-                {"foo": "bar"},
-                {"$or": [{"baz": {"$gt": 2}}, {"baz": {"$lt": 0}}]},
+                {"foo": "bar", "baz": None},
+                {
+                    "$or": [
+                        {"foo": "bar", "baz": {"$gt": 2}},
+                        {"foo": "bar", "baz": {"$lt": 0}},
+                    ]
+                },
             ],
         },
         [
@@ -38,14 +43,61 @@ testcases = [
             {"foo": "bar", "baz": -1},
             {"foo": "bar", "baz": 1},
             {"foo": "bar", "baz": 2},
-            {"foo": "qux", "baz": 3},
+            {"foo": "bar", "baz": 3},
             {},
             {"foo": {"foo": "bar"}},
         ],
         [
             {"foo": "bar"},
             {"foo": "bar", "baz": -1},
-            {"foo": "qux", "baz": 3},
+            {"foo": "bar", "baz": 3},
+        ],
+    ),
+    (
+        "nested $or and $and",
+        {
+            "$or": [
+                {
+                    "$and": [
+                        {"foo": "bar"},
+                        {"baz": None},
+                    ]
+                },
+                {
+                    "$and": [
+                        {"foo": None},
+                        {"baz": "qux"},
+                    ]
+                },
+                {
+                    "$and": [
+                        {"foo": "bar"},
+                        {"baz": {"$gt": 2}},
+                    ]
+                },
+                {
+                    "$and": [
+                        {"foo": "bar"},
+                        {"baz": {"$lt": 0}},
+                    ]
+                },
+            ],
+        },
+        [
+            {"foo": "bar"},
+            {"baz": "qux"},
+            {"foo": "bar", "baz": -1},
+            {"foo": "bar", "baz": 1},
+            {"foo": "bar", "baz": 2},
+            {"foo": "bar", "baz": 3},
+            {},
+            {"foo": {"foo": "bar"}},
+        ],
+        [
+            {"foo": "bar"},
+            {"baz": "qux"},
+            {"foo": "bar", "baz": -1},
+            {"foo": "bar", "baz": 3},
         ],
     ),
 ]
