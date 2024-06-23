@@ -51,6 +51,20 @@ testcases = [
         [{"foo": {"bar": "baz"}}],
     ),
     (
+        "nested object path, explicit $eq empty ov",
+        {"foo.bar": {}},
+        [
+            {"foo": {"bar": {}}},
+            {"foo": {"bar": "baz"}},
+            {},
+            {"foo": "bar"},
+            {"foo": {"bar": "qux"}},
+        ],
+        [
+            {"foo": {"bar": {}}},
+        ],
+    ),
+    (
         "nested object path, implicit $eq",
         {"foo.bar": "baz"},
         [
