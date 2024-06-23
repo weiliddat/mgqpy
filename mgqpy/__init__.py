@@ -75,6 +75,8 @@ class Query:
                     results.append(_match_lte(doc, path_parts, exp_or_ov["$lte"]))
                 if "$in" in exp_or_ov:
                     results.append(_match_in(doc, path_parts, exp_or_ov["$in"]))
+                if "$nin" in exp_or_ov:
+                    results.append(_match_nin(doc, path_parts, exp_or_ov["$nin"]))
             else:
                 results.append(_match_eq(doc, path_parts, exp_or_ov))
 
@@ -140,6 +142,10 @@ def _match_in(doc, path: List[str], ov) -> bool:
         return True
 
     return False
+
+
+def _match_nin(doc, path: List[str], ov) -> bool:
+    return not _match_in(doc, path, ov)
 
 
 def _match_gt(doc, path: List[str], ov) -> bool:
