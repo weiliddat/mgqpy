@@ -187,6 +187,8 @@ testcases = [
             {"foo": {"bar": ["zzz"]}},
             {"foo": {"bar": ["bar", "baz"]}},
             {"foo": {"bar": ["baz", "bar"]}},
+            {"foo": {"bar": ["baa", "bzz"]}},
+            {"foo": {"bar": ["bzz", "baa"]}},
             {"foo": {"bar": ["bar", "baz", "qux"]}},
             {},
             {"foo": "bar"},
@@ -195,6 +197,7 @@ testcases = [
         [
             {"foo": {"bar": ["zzz"]}},
             {"foo": {"bar": ["baz", "bar"]}},
+            {"foo": {"bar": ["bzz", "baa"]}},
             {"foo": {"bar": ["bar", "baz", "qux"]}},
         ],
     ),
