@@ -1,4 +1,4 @@
-"""mongo query as a python filter predicate"""
+"""mongo query as a predicate function"""
 
 __version__ = "0.1.8"
 

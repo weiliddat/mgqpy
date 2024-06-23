@@ -2,7 +2,7 @@
 
 [![codecov](https://codecov.io/gh/weiliddat/mgqpy/graph/badge.svg?token=CuQS0w5IkL)](https://codecov.io/gh/weiliddat/mgqpy)
 
-mongo query as a python filter predicate
+mongo query as a predicate function
 
 ```sh
 pip install mgqpy
