@@ -73,6 +73,8 @@ class Query:
                     results.append(_match_lt(doc, path_parts, exp_or_ov["$lt"]))
                 if "$lte" in exp_or_ov:
                     results.append(_match_lte(doc, path_parts, exp_or_ov["$lte"]))
+                if "$in" in exp_or_ov:
+                    results.append(_match_in(doc, path_parts, exp_or_ov["$in"]))
             else:
                 results.append(_match_eq(doc, path_parts, exp_or_ov))
 
@@ -108,6 +110,36 @@ def _match_eq(doc: dict, path: List[str], ov) -> bool:
 
 def _match_ne(doc, path: List[str], ov) -> bool:
     return not _match_eq(doc, path, ov)
+
+
+def _match_in(doc, path: List[str], ov) -> bool:
+    if not isinstance(ov, list):
+        raise TypeError("$in operator value must be a list")
+
+    if len(path) == 0:
+        if isinstance(doc, list) and any([_match_in(d, path, ov) for d in doc]):
+            return True
+
+        return doc in ov
+
+    key = path[0]
+    rest = path[1:]
+
+    if isinstance(doc, dict) and key in doc:
+        return _match_in(doc[key], rest, ov)
+
+    if isinstance(doc, list) and key.isdigit():
+        idx = int(key)
+        if idx < len(doc):
+            return _match_in(doc[idx], rest, ov)
+
+    if isinstance(doc, list):
+        return any([_match_in(d, path, ov) for d in doc])
+
+    if None in ov:
+        return True
+
+    return False
 
 
 def _match_gt(doc, path: List[str], ov) -> bool:
