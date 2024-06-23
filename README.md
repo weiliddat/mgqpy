@@ -59,4 +59,4 @@ Array query operators
 
 - [x] \$all
 - [x] \$elemMatch
-- [ ] \$size
+- [x] \$size
