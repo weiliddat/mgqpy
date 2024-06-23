@@ -27,9 +27,9 @@ __version__ = "0.4.1"
 
 import math
 import operator
+import re
 from itertools import zip_longest
 from numbers import Number
-import re
 from typing import List
 
 cond_ops = {
