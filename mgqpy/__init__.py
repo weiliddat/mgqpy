@@ -63,6 +63,8 @@ class Query:
             if is_all_ops:
                 if "$eq" in exp_or_ov:
                     results.append(_match_eq(doc, path_parts, exp_or_ov["$eq"]))
+                if "$ne" in exp_or_ov:
+                    results.append(_match_ne(doc, path_parts, exp_or_ov["$ne"]))
                 if "$gt" in exp_or_ov:
                     results.append(_match_gt(doc, path_parts, exp_or_ov["$gt"]))
                 if "$gte" in exp_or_ov:
@@ -102,6 +104,10 @@ def _match_eq(doc: dict, path: List[str], ov) -> bool:
         return True
 
     return False
+
+
+def _match_ne(doc, path: List[str], ov) -> bool:
+    return not _match_eq(doc, path, ov)
 
 
 def _match_gt(doc, path: List[str], ov) -> bool:
