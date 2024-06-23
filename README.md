@@ -38,8 +38,8 @@ Comparison query operators
 - [x] \$gte
 - [x] \$lt
 - [x] \$lte
-- [ ] \$in
-- [ ] \$nin
+- [x] \$in
+- [x] \$nin
 
 Logical query operators
 
