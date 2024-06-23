@@ -1,6 +1,6 @@
 import pytest
 
-from mgqpy import Query
+from mongoquery import Query
 
 from .helpers import get_mongo_results, get_filter_results
 
