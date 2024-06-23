@@ -217,6 +217,10 @@ def _match_lt(doc, path: List[str], ov) -> bool:
                 return True
 
         if isinstance(doc, dict) and isinstance(ov, dict):
+            if not doc and not ov:
+                return False
+
+            all_equal = False
             keys = zip_longest(doc.keys(), ov.keys())
             for doc_key, ov_key in keys:
                 if doc_key is None:
@@ -226,8 +230,14 @@ def _match_lt(doc, path: List[str], ov) -> bool:
                 if doc_key != ov_key:
                     return doc_key < ov_key
                 if doc_key == ov_key:
+                    if doc[doc_key] > ov[ov_key]:
+                        return False
                     if doc[doc_key] < ov[ov_key]:
                         return True
+                    if doc[doc_key] == ov[ov_key]:
+                        all_equal = True
+            if all_equal:
+                return False
 
         if isinstance(doc, Number) and isinstance(ov, Number):
             return operator.lt(doc, ov)
