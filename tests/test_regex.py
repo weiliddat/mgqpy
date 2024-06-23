@@ -195,7 +195,7 @@ testcases = [
 
 
 @pytest.mark.parametrize("name,query,input,expected", testcases)
-def test_mgqpy_or(test_db, benchmark, name, query, input, expected):
+def test_mgqpy_regex(test_db, benchmark, name, query, input, expected):
     mongo_expected = get_mongo_results(test_db, query, input)
     assert expected == mongo_expected, name
 
