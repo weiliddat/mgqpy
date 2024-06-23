@@ -41,6 +41,13 @@ cmp_ops = {
     "$nin",
 }
 
+log_ops = {
+    "$and",
+    "$or",
+    "$not",
+    "$nor",
+}
+
 
 class Query:
     def __init__(self, query):
@@ -48,10 +55,27 @@ class Query:
         pass
 
     def match(self, doc) -> bool:
-        results: List[bool] = []
+        results = match_cond(self._query, doc)
 
-        for path in self._query:
-            exp_or_ov = self._query[path]
+        return all(results)
+
+
+def match_cond(query, doc):
+    results: List[bool] = []
+
+    for path in query:
+        if isinstance(path, str) and path in log_ops:
+            if path == "$and":
+                for cond in query[path]:
+                    results.append(all(match_cond(cond, doc)))
+            # if path == "$or":
+            #     results.append(any(match_cond(query[path], doc)))
+            # if path == "$not":
+            #     results.append(not match_cond(query[path], doc))
+            # if path == "$nor":
+            #     results.append(not any(match_cond(query[path], doc)))
+        else:
+            exp_or_ov = query[path]
             is_all_ops = (
                 exp_or_ov
                 and isinstance(exp_or_ov, dict)
@@ -80,7 +104,7 @@ class Query:
             else:
                 results.append(_match_eq(doc, path_parts, exp_or_ov))
 
-        return all(results)
+    return results
 
 
 def _match_eq(doc: dict, path: List[str], ov) -> bool:
