@@ -157,6 +157,9 @@ def _match_gte(doc, path: List[str], ov) -> bool:
                 return True
 
         if isinstance(doc, dict) and isinstance(ov, dict):
+            if not doc and not ov:
+                return True
+
             keys = zip_longest(doc.keys(), ov.keys())
             for doc_key, ov_key in keys:
                 if doc_key is None:

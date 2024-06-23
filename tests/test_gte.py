@@ -110,6 +110,8 @@ testcases = [
         "nested object path, $gte None",
         {"foo.bar": {"$gte": None}},
         [
+            {"foo": {"bar": {}}},
+            {"foo": {"bar": []}},
             {"foo": {"bar": -1}},
             {"foo": {"bar": 0}},
             {"foo": {"bar": 1}},
@@ -172,6 +174,7 @@ testcases = [
         "nested object path, object comparison",
         {"foo.bar": {"$gte": {"baz": "qux"}}},
         [
+            {"foo": {"bar": {}}},
             {"foo": {"bar": {"baa": "zap"}}},
             {"foo": {"bar": {"baz": "bux"}}},
             {"foo": {"bar": {"baz": "qux"}}},
@@ -186,6 +189,25 @@ testcases = [
             {"foo": {"bar": {"baz": "qux"}}},
             {"foo": {"bar": {"baz": "zap"}}},
             {"foo": {"bar": {"bla": "jaz"}}},
+            {"foo": {"bar": {"baz": "qux", "bla": "jaz"}}},
+        ],
+    ),
+    (
+        "nested object path, object comparison empty ov",
+        {"foo.bar": {"$gte": {}}},
+        [
+            {"foo": {"bar": {}}},
+            {"foo": {"bar": None}},
+            {"foo": {"bar": 1}},
+            {"foo": {"bar": "baz"}},
+            {"foo": {"bar": {"baz": "qux"}}},
+            {"foo": {"bar": {"baz": "qux", "bla": "jaz"}}},
+            {},
+            {"foo": "bar"},
+        ],
+        [
+            {"foo": {"bar": {}}},
+            {"foo": {"bar": {"baz": "qux"}}},
             {"foo": {"bar": {"baz": "qux", "bla": "jaz"}}},
         ],
     ),
