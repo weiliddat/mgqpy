@@ -43,11 +43,11 @@ Comparison query operators
 
 Logical query operators
 
-- [ ] \$and
+- [x] \$and
 - [x] \$and (implicit), e.g. `{"foo": 1, "bar": "baz"}`
-- [ ] \$or
-- [ ] \$not
-- [ ] \$nor
+- [x] \$or
+- [x] \$not
+- [x] \$nor
 
 Evaluation query operators
 
