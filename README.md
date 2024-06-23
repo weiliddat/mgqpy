@@ -2,28 +2,35 @@
 
 [![codecov](https://codecov.io/gh/weiliddat/mgqpy/graph/badge.svg?token=CuQS0w5IkL)](https://codecov.io/gh/weiliddat/mgqpy)
 
-mongo query as a predicate function
+[MongoDB query](https://www.mongodb.com/docs/manual/reference/operator/query/) as a predicate function
+
+This aims to be consistent with how MongoDB's matches documents. This includes traversal across nested dicts and lists, None and field-presence/absence handling.
+
+## Installation
 
 ```sh
 pip install mgqpy
 ```
 
+## Usage
+
 ```python
 from mgqpy import Query
 
-predicate = Query({"foo.bar": 1})
+predicate = Query({"foo.bar": {"$gt": 1}})
 
 inputs = [
-    {"foo": [{"bar": [1]}]},
+    {"foo": [{"bar": [1, 2]}]},
     {"foo": {"bar": 1}},
+    {"foo": {"bar": 2}},
     {"foo": None},
 ]
 
 filtered = filter(predicate.match, inputs)
 
 assert list(filtered) == [
-    {"foo": [{"bar": [1]}]},
-    {"foo": {"bar": 1}},
+    {"foo": [{"bar": [1, 2]}]},
+    {"foo": {"bar": 2}},
 ]
 ```
 
