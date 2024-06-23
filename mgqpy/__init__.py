@@ -46,6 +46,7 @@ cond_ops = {
     "$options",
     "$mod",
     "$all",
+    "$elemMatch",
 }
 
 query_ops = {
@@ -115,6 +116,10 @@ def match_cond(query, doc):
                     results.append(_match_mod(doc, path_parts, exp_or_ov["$mod"]))
                 if "$all" in exp_or_ov:
                     results.append(_match_all(doc, path_parts, exp_or_ov["$all"]))
+                if "$elemMatch" in exp_or_ov:
+                    results.append(
+                        _match_elem_match(doc, path_parts, exp_or_ov["$elemMatch"])
+                    )
             else:
                 results.append(_match_eq(doc, path_parts, exp_or_ov))
 
@@ -510,5 +515,32 @@ def _match_all(doc, path: List[str], ov) -> bool:
 
     if isinstance(doc, list):
         return any([_match_all(d, path, ov) for d in doc])
+
+    return False
+
+
+def _match_elem_match(doc, path: List[str], ov) -> bool:
+    if len(path) == 0:
+        if not isinstance(doc, list):
+            return False
+
+        if any([match_cond(ov, d) for d in doc]):
+            return True
+
+        return False
+
+    key = path[0]
+    rest = path[1:]
+
+    if isinstance(doc, dict) and key in doc:
+        return _match_elem_match(doc[key], rest, ov)
+
+    if isinstance(doc, list) and key.isdigit():
+        idx = int(key)
+        if idx < len(doc):
+            return _match_elem_match(doc[idx], rest, ov)
+
+    if isinstance(doc, list):
+        return any([_match_elem_match(d, path, ov) for d in doc])
 
     return False
