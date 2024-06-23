@@ -57,6 +57,6 @@ Evaluation query operators
 
 Array query operators
 
-- [ ] \$all
+- [x] \$all
 - [ ] \$elemMatch
 - [ ] \$size

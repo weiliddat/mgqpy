@@ -45,6 +45,7 @@ cond_ops = {
     "$regex",
     "$options",
     "$mod",
+    "$all",
 }
 
 query_ops = {
@@ -111,10 +112,9 @@ def match_cond(query, doc):
                     }
                     results.append(_match_regex(doc, path_parts, ov))
                 if "$mod" in exp_or_ov:
-                    if len(exp_or_ov["$mod"]) == 2:
-                        results.append(_match_mod(doc, path_parts, exp_or_ov["$mod"]))
-                    else:
-                        raise ValueError("$mod must be an array of two values")
+                    results.append(_match_mod(doc, path_parts, exp_or_ov["$mod"]))
+                if "$all" in exp_or_ov:
+                    results.append(_match_all(doc, path_parts, exp_or_ov["$all"]))
             else:
                 results.append(_match_eq(doc, path_parts, exp_or_ov))
 
@@ -454,6 +454,9 @@ def _match_lte(doc, path: List[str], ov) -> bool:
 
 
 def _match_mod(doc, path: List[str], ov) -> bool:
+    if len(ov) != 2:
+        raise ValueError("$mod operator value must be an array of two values")
+
     if len(path) == 0:
         if isinstance(doc, list) and any([_match_mod(d, path, ov) for d in doc]):
             return True
@@ -480,5 +483,32 @@ def _match_mod(doc, path: List[str], ov) -> bool:
 
     if isinstance(doc, list):
         return any([_match_mod(d, path, ov) for d in doc])
+
+    return False
+
+
+def _match_all(doc, path: List[str], ov) -> bool:
+    if not isinstance(ov, list):
+        raise TypeError("$all operator value must be a list")
+
+    if len(path) == 0:
+        if not isinstance(doc, list):
+            return False
+
+        return all([o in doc or o == doc for o in ov])
+
+    key = path[0]
+    rest = path[1:]
+
+    if isinstance(doc, dict) and key in doc:
+        return _match_all(doc[key], rest, ov)
+
+    if isinstance(doc, list) and key.isdigit():
+        idx = int(key)
+        if idx < len(doc):
+            return _match_all(doc[idx], rest, ov)
+
+    if isinstance(doc, list):
+        return any([_match_all(d, path, ov) for d in doc])
 
     return False
