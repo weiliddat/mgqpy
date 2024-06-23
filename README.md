@@ -33,7 +33,7 @@ Comparison query operators
 - [x] \$eq (implicit), e.g. `{"foo": None}`
 - [ ] \$ne
 - [x] \$gt
-- [ ] \$gte
+- [x] \$gte
 - [ ] \$lt
 - [ ] \$lte
 - [ ] \$in
