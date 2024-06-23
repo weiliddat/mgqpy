@@ -119,6 +119,10 @@ def _match_eq(doc: dict, path: List[str], ov) -> bool:
         if isinstance(doc, list) and any([_match_eq(d, path, ov) for d in doc]):
             return True
 
+        if isinstance(ov, re.Pattern) and isinstance(doc, str):
+            if ov.search(doc):
+                return True
+
         return doc == ov
 
     key = path[0]
@@ -149,6 +153,9 @@ def _match_regex(doc, path: List[str], ov) -> bool:
     if len(path) == 0:
         if isinstance(doc, list) and any([_match_regex(d, path, ov) for d in doc]):
             return True
+
+        if not isinstance(doc, str):
+            return False
 
         flags = re.NOFLAG
         if "i" in ov["$options"]:
@@ -192,7 +199,7 @@ def _match_in(doc, path: List[str], ov) -> bool:
         if isinstance(doc, list) and any([_match_in(d, path, ov) for d in doc]):
             return True
 
-        return doc in ov
+        return any([_match_eq(doc, path, o) for o in ov])
 
     key = path[0]
     rest = path[1:]

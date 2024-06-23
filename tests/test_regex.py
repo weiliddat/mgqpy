@@ -1,3 +1,4 @@
+import re
 import pytest
 
 from mgqpy import Query
@@ -13,6 +14,9 @@ testcases = [
             },
         },
         [
+            {"foo": {}},
+            {"foo": None},
+            {"foo": 1},
             {"foo": "bar"},
             {"foo": "baz"},
             {"foo": "BAR"},
@@ -134,6 +138,57 @@ testcases = [
         ],
         [
             {"foo": [{"bar": "bazo"}]},
+        ],
+    ),
+    (
+        "implicit $regex",
+        {"foo": re.compile("^ba", re.IGNORECASE)},
+        [
+            {"foo": {}},
+            {"foo": None},
+            {"foo": 1},
+            {"foo": "bar"},
+            {"foo": "baz"},
+            {"foo": "BAR"},
+            {"foo": "BAZ"},
+            {"foo": "qux"},
+            {"foo": "quux"},
+        ],
+        [
+            {"foo": "bar"},
+            {"foo": "baz"},
+            {"foo": "BAR"},
+            {"foo": "BAZ"},
+        ],
+    ),
+    (
+        "$in with implicit $regex",
+        {
+            "foo": {
+                "$in": [
+                    re.compile("^ba", re.IGNORECASE),
+                    re.compile("^qu", re.IGNORECASE),
+                ]
+            }
+        },
+        [
+            {"foo": {}},
+            {"foo": None},
+            {"foo": 1},
+            {"foo": "bar"},
+            {"foo": "baz"},
+            {"foo": "BAR"},
+            {"foo": "BAZ"},
+            {"foo": "qux"},
+            {"foo": "quux"},
+        ],
+        [
+            {"foo": "bar"},
+            {"foo": "baz"},
+            {"foo": "BAR"},
+            {"foo": "BAZ"},
+            {"foo": "qux"},
+            {"foo": "quux"},
         ],
     ),
 ]

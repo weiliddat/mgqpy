@@ -52,7 +52,7 @@ Logical query operators
 Evaluation query operators
 
 - [x] \$regex
-- [ ] \$regex (implicit), e.g. `{"foo": re.compile('^bar')}`
+- [x] \$regex (implicit), e.g. `{"foo": re.compile('^bar')}`
 - [ ] \$mod
 
 Array query operators
