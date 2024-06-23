@@ -28,6 +28,7 @@ __version__ = "0.3.0"
 import operator
 from itertools import zip_longest
 from numbers import Number
+import re
 from typing import List
 
 cmp_ops = {
@@ -40,6 +41,8 @@ cmp_ops = {
     "$ne",
     "$nin",
     "$not",
+    "$regex",
+    "$options",
 }
 
 log_ops = {
@@ -99,6 +102,12 @@ def match_cond(query, doc):
                     results.append(_match_nin(doc, path_parts, exp_or_ov["$nin"]))
                 if "$not" in exp_or_ov:
                     results.append(not match_cond({path: exp_or_ov["$not"]}, doc))
+                if "$regex" in exp_or_ov:
+                    ov = {
+                        "$regex": exp_or_ov["$regex"],
+                        "$options": exp_or_ov.get("$options", ""),
+                    }
+                    results.append(_match_regex(doc, path_parts, ov))
             else:
                 results.append(_match_eq(doc, path_parts, exp_or_ov))
 
@@ -134,6 +143,45 @@ def _match_eq(doc: dict, path: List[str], ov) -> bool:
 
 def _match_ne(doc, path: List[str], ov) -> bool:
     return not _match_eq(doc, path, ov)
+
+
+def _match_regex(doc, path: List[str], ov) -> bool:
+    if len(path) == 0:
+        if isinstance(doc, list) and any([_match_regex(d, path, ov) for d in doc]):
+            return True
+
+        flags = re.NOFLAG
+        if "i" in ov["$options"]:
+            flags = flags | re.IGNORECASE
+        if "m" in ov["$options"]:
+            flags = flags | re.MULTILINE
+        if "s" in ov["$options"]:
+            flags = flags | re.DOTALL
+        if "x" in ov["$options"]:
+            flags = flags | re.VERBOSE
+
+        matcher = re.compile(ov["$regex"], flags)
+
+        if matcher.search(doc):
+            return True
+
+        return False
+
+    key = path[0]
+    rest = path[1:]
+
+    if isinstance(doc, dict) and key in doc:
+        return _match_regex(doc[key], rest, ov)
+
+    if isinstance(doc, list) and key.isdigit():
+        idx = int(key)
+        if idx < len(doc):
+            return _match_regex(doc[idx], rest, ov)
+
+    if isinstance(doc, list):
+        return any([_match_regex(d, path, ov) for d in doc])
+
+    return False
 
 
 def _match_in(doc, path: List[str], ov) -> bool:
