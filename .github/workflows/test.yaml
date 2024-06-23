@@ -1,0 +1,33 @@
+name: Test
+
+on:
+  push:
+    paths:
+      - '**.py'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Compose up
+        run: docker compose up --detach --wait
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Test coverage
+        run: pytest --cov=mgqpy
+
+      - name: Upload to codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
