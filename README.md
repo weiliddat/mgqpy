@@ -36,8 +36,8 @@ Comparison query operators
 - [ ] \$ne
 - [x] \$gt
 - [x] \$gte
-- [ ] \$lt
-- [ ] \$lte
+- [x] \$lt
+- [x] \$lte
 - [ ] \$in
 - [ ] \$nin
 
