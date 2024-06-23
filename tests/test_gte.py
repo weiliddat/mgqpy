@@ -2,7 +2,7 @@ import pytest
 
 from mgqpy import Query
 
-from .helpers import assert_mongo_behavior, get_filter_results
+from .helpers import get_mongo_results, get_filter_results
 
 testcases = [
     (
@@ -265,6 +265,7 @@ testcases = [
 @pytest.mark.parametrize("name,query,input,expected", testcases)
 def test_mgqpy_gte(test_db, benchmark, name, query, input, expected):
     q = Query(query)
-    assert_mongo_behavior(test_db, name, input, expected, q)
+    mongo_expected = get_mongo_results(test_db, input, q)
+    assert expected == mongo_expected, name
     actual = benchmark(get_filter_results, q.match, input)
     assert actual == expected, name
