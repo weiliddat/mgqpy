@@ -113,3 +113,9 @@ def test_mgqpy_nor(test_db, benchmark, name, query, input, expected):
     q = Query(query)
     actual = benchmark(get_filter_results, q.match, input)
     assert actual == expected, name
+
+
+def test_mgqpy_invalid_query():
+    query = {"$nor": {"foo": "bar"}}
+    q = Query(query)
+    assert q.match({"foo": "bar"}) is False

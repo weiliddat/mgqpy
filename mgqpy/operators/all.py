@@ -2,8 +2,8 @@ from typing import List
 
 
 def _match_all(doc, path: List[str], ov) -> bool:
-    if not isinstance(ov, list):
-        raise TypeError("$all operator value must be a list")
+    if not _validate_all(ov):
+        return False
 
     if len(path) == 0:
         if not isinstance(doc, list):
@@ -26,3 +26,7 @@ def _match_all(doc, path: List[str], ov) -> bool:
         return any([_match_all(d, path, ov) for d in doc])
 
     return False
+
+
+def _validate_all(ov) -> bool:
+    return isinstance(ov, list)

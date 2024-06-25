@@ -1,6 +1,8 @@
 import re
 from typing import List
 
+import mgqpy
+
 
 def _match_eq(doc, path: List[str], ov) -> bool:
     if len(path) == 0:
@@ -35,3 +37,7 @@ def _match_eq(doc, path: List[str], ov) -> bool:
 
 def _match_ne(doc, path: List[str], ov) -> bool:
     return not _match_eq(doc, path, ov)
+
+
+def _match_not(doc, path, ov):
+    return not mgqpy._match_cond({path: ov}, doc)

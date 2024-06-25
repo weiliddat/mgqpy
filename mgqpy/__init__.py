@@ -27,10 +27,10 @@ __version__ = "0.5.1"
 
 from typing import List
 
-from .operators.and_or_nor import _match_and, _match_or, _match_nor
-from .operators.all import _match_all
+from .operators.and_or_nor import _match_and, _match_or, _match_nor, _validate_query_ops
+from .operators.all import _match_all, _validate_all
 from .operators.elem_match import _match_elem_match
-from .operators.eq_ne import _match_eq, _match_ne
+from .operators.eq_ne_not import _match_eq, _match_ne, _match_not
 from .operators.gt import _match_gt
 from .operators.gte import _match_gte
 from .operators.in_nin import _match_in, _match_nin, _validate_in_nin
@@ -113,7 +113,7 @@ def _match_cond(query, doc):
                 if "$nin" in exp:
                     results.append(_match_nin(doc, path_parts, exp["$nin"]))
                 if "$not" in exp:
-                    results.append(not _match_cond({path: exp["$not"]}, doc))
+                    results.append(_match_not(doc, path, exp["$not"]))
                 if "$regex" in exp:
                     ov = {
                         "$regex": exp["$regex"],
@@ -144,10 +144,16 @@ def _validate(query) -> bool:
     for path in query:
         if isinstance(path, str) and path in query_ops:
             if path == "$and":
-                if not isinstance(query["$and"], list):
+                if not _validate_query_ops(query["$and"]):
                     raise TypeError("$and operator value must be a list")
-                for cond in query[path]:
-                    _validate(cond)
+            if path == "$or":
+                if not _validate_query_ops(query["$or"]):
+                    raise TypeError("$or operator value must be a list")
+            if path == "$nor":
+                if not _validate_query_ops(query["$nor"]):
+                    raise TypeError("$nor operator value must be a list")
+            for cond in query[path]:
+                _validate(cond)
         else:
             exp_or_ov = query[path]
             is_all_exp = _check_all_exp(exp_or_ov)
@@ -157,6 +163,8 @@ def _validate(query) -> bool:
                     raise TypeError("$in operator value must be a list")
                 if "$nin" in exp and not _validate_in_nin(exp["$nin"]):
                     raise TypeError("$nin operator value must be a list")
+                if "$all" in exp and not _validate_all(exp["$all"]):
+                    raise TypeError("$all operator value must be a list")
 
     return True
 

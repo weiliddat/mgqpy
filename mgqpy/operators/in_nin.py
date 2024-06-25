@@ -1,4 +1,4 @@
-from mgqpy.operators.eq_ne import _match_eq
+from mgqpy.operators.eq_ne_not import _match_eq
 
 
 from typing import List

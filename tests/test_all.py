@@ -102,7 +102,7 @@ def test_mgqpy_all(test_db, benchmark, name, query, input, expected):
     assert actual == expected, name
 
 
-# def test_mgqpy_invalid_query():
-#     query = {"foo": {"$all": {"bar": "baz"}}}
-#     q = Query(query)
-#     assert q.match({"foo": "bar"}) is False
+def test_mgqpy_invalid_query():
+    query = {"foo": {"$all": {"bar": "baz"}}}
+    q = Query(query)
+    assert q.match({"foo": "bar"}) is False

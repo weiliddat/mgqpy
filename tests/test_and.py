@@ -74,6 +74,6 @@ def test_mgqpy_and(test_db, benchmark, name, query, input, expected):
 
 
 def test_mgqpy_invalid_query():
-    query = {"foo": {"$and": {"bar": "baz"}}}
+    query = {"$and": {"foo": "bar"}}
     q = Query(query)
     assert q.match({"foo": "bar"}) is False
