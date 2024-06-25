@@ -93,3 +93,23 @@ def test_mgqpy_all_validation():
 
     with pytest.raises(TypeError):
         Query({"foo": {"$all": {"foo": "bar"}}}).validate()
+
+
+def test_mgqpy_mod_validation():
+    Query({"foo": {"$mod": [5, 1]}}).validate()
+
+    with pytest.raises(TypeError):
+        Query({"foo": {"$mod": "not-a-list"}}).validate()
+
+    with pytest.raises(TypeError):
+        Query({"foo": {"$mod": ["a", "b"]}}).validate()
+
+
+def test_mgqpy_size_validation():
+    Query({"foo": {"$size": 2}}).validate()
+
+    with pytest.raises(TypeError):
+        Query({"foo": {"$size": "2"}}).validate()
+
+    with pytest.raises(TypeError):
+        Query({"foo": {"$size": ["a", "b"]}}).validate()

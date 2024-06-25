@@ -1,12 +1,16 @@
+from numbers import Number
 from typing import List
 
 
 def _match_size(doc, path: List[str], ov) -> bool:
+    if not _validate_size(ov):
+        return False
+
     if len(path) == 0:
         if not isinstance(doc, list):
             return False
 
-        if len(doc) == ov:
+        if len(doc) == int(ov):
             return True
 
         return False
@@ -26,3 +30,7 @@ def _match_size(doc, path: List[str], ov) -> bool:
         return any([_match_size(d, path, ov) for d in doc])
 
     return False
+
+
+def _validate_size(ov) -> bool:
+    return isinstance(ov, Number)

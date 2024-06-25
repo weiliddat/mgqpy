@@ -4,8 +4,8 @@ from typing import List
 
 
 def _match_mod(doc, path: List[str], ov) -> bool:
-    if len(ov) != 2:
-        raise ValueError("$mod operator value must be an array of two values")
+    if not _validate_mod(ov):
+        return False
 
     if len(path) == 0:
         if isinstance(doc, list) and any([_match_mod(d, path, ov) for d in doc]):
@@ -35,3 +35,12 @@ def _match_mod(doc, path: List[str], ov) -> bool:
         return any([_match_mod(d, path, ov) for d in doc])
 
     return False
+
+
+def _validate_mod(ov):
+    return (
+        isinstance(ov, list)
+        and len(ov) == 2
+        and isinstance(ov[0], Number)
+        and isinstance(ov[1], Number)
+    )

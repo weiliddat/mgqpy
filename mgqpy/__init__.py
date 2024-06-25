@@ -36,9 +36,9 @@ from .operators.gte import _match_gte
 from .operators.in_nin import _match_in, _match_nin, _validate_in_nin
 from .operators.lt import _match_lt
 from .operators.lte import _match_lte
-from .operators.mod import _match_mod
+from .operators.mod import _match_mod, _validate_mod
 from .operators.regex import _match_regex
-from .operators.size import _match_size
+from .operators.size import _match_size, _validate_size
 
 cond_ops = {
     "$eq",
@@ -165,6 +165,10 @@ def _validate(query) -> bool:
                     raise TypeError("$nin operator value must be a list")
                 if "$all" in exp and not _validate_all(exp["$all"]):
                     raise TypeError("$all operator value must be a list")
+                if "$mod" in exp and not _validate_mod(exp["$mod"]):
+                    raise TypeError("$mod operator value must be a list of 2 numbers")
+                if "$size" in exp and not _validate_size(exp["$size"]):
+                    raise TypeError("$size operator value must be a number")
 
     return True
 
