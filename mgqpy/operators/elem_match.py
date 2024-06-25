@@ -9,7 +9,7 @@ def _match_elem_match(doc, path: List[str], ov) -> bool:
         if not isinstance(doc, list):
             return False
 
-        if any([mgqpy._match_cond(ov, d) for d in doc]):
+        if any(mgqpy._match_cond(ov, d) for d in doc):
             return True
 
         return False
