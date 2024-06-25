@@ -40,19 +40,21 @@ assert list(filtered) == [
 ]
 ```
 
-Validating the query given.
-
-`validate` returns the `Query` instance so you can chain `match` if you wish to validate and test against an input.
+Use `validate` to validate queries given.
 
 ```python
-from mgqpy import Query
-
 predicate = Query({"foo": {"$in": 1}})
 
 try:
     predicate.validate()
 except TypeError as e:
     # ...
+```
+
+`validate` returns the `Query` instance so you can chain `match` if you wish to validate and test against an input in one go.
+
+```python
+predicate.validate().match({"foo": 1})
 ```
 
 ## Supported operators
