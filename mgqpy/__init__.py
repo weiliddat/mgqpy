@@ -27,7 +27,9 @@ __version__ = "0.5.1"
 
 from typing import List
 
+from .operators.and_or_nor import _match_and, _match_or, _match_nor
 from .operators.all import _match_all
+from .operators.elem_match import _match_elem_match
 from .operators.eq_ne import _match_eq, _match_ne
 from .operators.gt import _match_gt
 from .operators.gte import _match_gte
@@ -82,14 +84,11 @@ def _match_cond(query, doc):
     for path in query:
         if isinstance(path, str) and path in query_ops:
             if path == "$and":
-                for cond in query[path]:
-                    results.append(_match_cond(cond, doc))
+                results.append(_match_and(doc, path, query["$and"]))
             if path == "$or":
-                results.append(any([_match_cond(cond, doc) for cond in query[path]]))
+                results.append(_match_or(doc, path, query["$or"]))
             if path == "$nor":
-                results.append(
-                    not any([_match_cond(cond, doc) for cond in query[path]])
-                )
+                results.append(_match_nor(doc, path, query["$nor"]))
         else:
             exp_or_ov = query[path]
             is_all_exp = _check_all_exp(exp_or_ov)
@@ -160,33 +159,6 @@ def _validate(query) -> bool:
                     raise TypeError("$nin operator value must be a list")
 
     return True
-
-
-def _match_elem_match(doc, path: List[str], ov) -> bool:
-    if len(path) == 0:
-        if not isinstance(doc, list):
-            return False
-
-        if any([_match_cond(ov, d) for d in doc]):
-            return True
-
-        return False
-
-    key = path[0]
-    rest = path[1:]
-
-    if isinstance(doc, dict) and key in doc:
-        return _match_elem_match(doc[key], rest, ov)
-
-    if isinstance(doc, list) and key.isdigit():
-        idx = int(key)
-        if idx < len(doc):
-            return _match_elem_match(doc[idx], rest, ov)
-
-    if isinstance(doc, list):
-        return any([_match_elem_match(d, path, ov) for d in doc])
-
-    return False
 
 
 def _check_all_exp(exp_or_ov):
