@@ -127,6 +127,7 @@ def test_mgqpy_nin(test_db, benchmark, name, query, input, expected):
     assert actual == expected, name
 
 
-def test_mgqpy_nin_validation():
-    with pytest.raises(TypeError):
-        Query({"foo": {"$nin": "str"}}).match({})
+def test_mgqpy_invalid_query():
+    query = {"foo": {"$nin": "str"}}
+    q = Query(query)
+    assert q.match({"foo": "not-str"}) is False

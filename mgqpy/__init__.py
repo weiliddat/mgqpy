@@ -25,12 +25,20 @@ __version__ = "0.5.1"
 #
 # Doc refers to the object that is passed to the compiled filter function
 
-import math
-import operator
-import re
-from itertools import zip_longest
-from numbers import Number
 from typing import List
+
+from .operators.and_or_nor import _match_and, _match_or, _match_nor, _validate_query_ops
+from .operators.all import _match_all, _validate_all
+from .operators.elem_match import _match_elem_match
+from .operators.eq_ne_not import _match_eq, _match_ne, _match_not
+from .operators.gt import _match_gt
+from .operators.gte import _match_gte
+from .operators.in_nin import _match_in, _match_nin, _validate_in_nin
+from .operators.lt import _match_lt
+from .operators.lte import _match_lte
+from .operators.mod import _match_mod, _validate_mod
+from .operators.regex import _match_regex
+from .operators.size import _match_size, _validate_size
 
 cond_ops = {
     "$eq",
@@ -63,514 +71,111 @@ class Query:
         pass
 
     def match(self, doc) -> bool:
-        return match_cond(self._query, doc)
+        return _match_cond(self._query, doc)
+
+    def validate(self):
+        _validate(self._query)
+        return self
 
 
-def match_cond(query, doc):
+def _match_cond(query, doc):
     results: List[bool] = []
 
     for path in query:
         if isinstance(path, str) and path in query_ops:
             if path == "$and":
-                for cond in query[path]:
-                    results.append(match_cond(cond, doc))
+                results.append(_match_and(doc, path, query["$and"]))
             if path == "$or":
-                results.append(any([match_cond(cond, doc) for cond in query[path]]))
+                results.append(_match_or(doc, path, query["$or"]))
             if path == "$nor":
-                results.append(not any([match_cond(cond, doc) for cond in query[path]]))
+                results.append(_match_nor(doc, path, query["$nor"]))
         else:
             exp_or_ov = query[path]
-            is_all_ops = (
-                exp_or_ov
-                and isinstance(exp_or_ov, dict)
-                and all(key in cond_ops for key in exp_or_ov.keys())
-            )
-
+            is_all_exp = _check_all_exp(exp_or_ov)
             path_parts = path.split(".")
 
-            if is_all_ops:
-                if "$eq" in exp_or_ov:
-                    results.append(_match_eq(doc, path_parts, exp_or_ov["$eq"]))
-                if "$ne" in exp_or_ov:
-                    results.append(_match_ne(doc, path_parts, exp_or_ov["$ne"]))
-                if "$gt" in exp_or_ov:
-                    results.append(_match_gt(doc, path_parts, exp_or_ov["$gt"]))
-                if "$gte" in exp_or_ov:
-                    results.append(_match_gte(doc, path_parts, exp_or_ov["$gte"]))
-                if "$lt" in exp_or_ov:
-                    results.append(_match_lt(doc, path_parts, exp_or_ov["$lt"]))
-                if "$lte" in exp_or_ov:
-                    results.append(_match_lte(doc, path_parts, exp_or_ov["$lte"]))
-                if "$in" in exp_or_ov:
-                    results.append(_match_in(doc, path_parts, exp_or_ov["$in"]))
-                if "$nin" in exp_or_ov:
-                    results.append(_match_nin(doc, path_parts, exp_or_ov["$nin"]))
-                if "$not" in exp_or_ov:
-                    results.append(not match_cond({path: exp_or_ov["$not"]}, doc))
-                if "$regex" in exp_or_ov:
+            if is_all_exp:
+                exp = exp_or_ov
+                if "$eq" in exp:
+                    results.append(_match_eq(doc, path_parts, exp["$eq"]))
+                if "$ne" in exp:
+                    results.append(_match_ne(doc, path_parts, exp["$ne"]))
+                if "$gt" in exp:
+                    results.append(_match_gt(doc, path_parts, exp["$gt"]))
+                if "$gte" in exp:
+                    results.append(_match_gte(doc, path_parts, exp["$gte"]))
+                if "$lt" in exp:
+                    results.append(_match_lt(doc, path_parts, exp["$lt"]))
+                if "$lte" in exp:
+                    results.append(_match_lte(doc, path_parts, exp["$lte"]))
+                if "$in" in exp:
+                    results.append(_match_in(doc, path_parts, exp["$in"]))
+                if "$nin" in exp:
+                    results.append(_match_nin(doc, path_parts, exp["$nin"]))
+                if "$not" in exp:
+                    results.append(_match_not(doc, path, exp["$not"]))
+                if "$regex" in exp:
                     ov = {
-                        "$regex": exp_or_ov["$regex"],
-                        "$options": exp_or_ov.get("$options", ""),
+                        "$regex": exp["$regex"],
+                        "$options": exp.get("$options", ""),
                     }
                     results.append(_match_regex(doc, path_parts, ov))
-                if "$mod" in exp_or_ov:
-                    results.append(_match_mod(doc, path_parts, exp_or_ov["$mod"]))
-                if "$all" in exp_or_ov:
-                    results.append(_match_all(doc, path_parts, exp_or_ov["$all"]))
-                if "$elemMatch" in exp_or_ov:
+                if "$mod" in exp:
+                    results.append(_match_mod(doc, path_parts, exp["$mod"]))
+                if "$all" in exp:
+                    results.append(_match_all(doc, path_parts, exp["$all"]))
+                if "$elemMatch" in exp:
                     results.append(
-                        _match_elem_match(doc, path_parts, exp_or_ov["$elemMatch"])
+                        _match_elem_match(doc, path_parts, exp["$elemMatch"])
                     )
-                if "$size" in exp_or_ov:
-                    results.append(_match_size(doc, path_parts, exp_or_ov["$size"]))
+                if "$size" in exp:
+                    results.append(_match_size(doc, path_parts, exp["$size"]))
             else:
-                results.append(_match_eq(doc, path_parts, exp_or_ov))
+                ov = exp_or_ov
+                results.append(_match_eq(doc, path_parts, ov))
 
     return all(results)
 
 
-def _match_eq(doc: dict, path: List[str], ov) -> bool:
-    if len(path) == 0:
-        if isinstance(doc, list) and any([_match_eq(d, path, ov) for d in doc]):
-            return True
-
-        if isinstance(ov, re.Pattern) and isinstance(doc, str):
-            if ov.search(doc):
-                return True
-
-        return doc == ov
-
-    key = path[0]
-    rest = path[1:]
-
-    if isinstance(doc, dict) and key in doc:
-        return _match_eq(doc[key], rest, ov)
-
-    if isinstance(doc, list) and key.isdigit():
-        idx = int(key)
-        if idx < len(doc):
-            return _match_eq(doc[idx], rest, ov)
-
-    if isinstance(doc, list):
-        return any([_match_eq(d, path, ov) for d in doc])
-
-    if ov is None:
-        return True
-
-    return False
-
-
-def _match_ne(doc, path: List[str], ov) -> bool:
-    return not _match_eq(doc, path, ov)
-
-
-def _match_regex(doc, path: List[str], ov) -> bool:
-    if len(path) == 0:
-        if isinstance(doc, list) and any([_match_regex(d, path, ov) for d in doc]):
-            return True
-
-        if not isinstance(doc, str):
-            return False
-
-        flags = re.NOFLAG
-        if "i" in ov["$options"]:
-            flags = flags | re.IGNORECASE
-        if "m" in ov["$options"]:
-            flags = flags | re.MULTILINE
-        if "s" in ov["$options"]:
-            flags = flags | re.DOTALL
-        if "x" in ov["$options"]:
-            flags = flags | re.VERBOSE
-
-        matcher = re.compile(ov["$regex"], flags)
-
-        if matcher.search(doc):
-            return True
-
-        return False
-
-    key = path[0]
-    rest = path[1:]
-
-    if isinstance(doc, dict) and key in doc:
-        return _match_regex(doc[key], rest, ov)
-
-    if isinstance(doc, list) and key.isdigit():
-        idx = int(key)
-        if idx < len(doc):
-            return _match_regex(doc[idx], rest, ov)
-
-    if isinstance(doc, list):
-        return any([_match_regex(d, path, ov) for d in doc])
-
-    return False
-
-
-def _match_in(doc, path: List[str], ov) -> bool:
-    if not isinstance(ov, list):
-        raise TypeError("$in operator value must be a list")
-
-    if len(path) == 0:
-        if isinstance(doc, list) and any([_match_in(d, path, ov) for d in doc]):
-            return True
-
-        return any([_match_eq(doc, path, o) for o in ov])
-
-    key = path[0]
-    rest = path[1:]
-
-    if isinstance(doc, dict) and key in doc:
-        return _match_in(doc[key], rest, ov)
-
-    if isinstance(doc, list) and key.isdigit():
-        idx = int(key)
-        if idx < len(doc):
-            return _match_in(doc[idx], rest, ov)
-
-    if isinstance(doc, list):
-        return any([_match_in(d, path, ov) for d in doc])
-
-    if None in ov:
-        return True
-
-    return False
-
-
-def _match_nin(doc, path: List[str], ov) -> bool:
-    return not _match_in(doc, path, ov)
-
-
-def _match_gt(doc, path: List[str], ov) -> bool:
-    if len(path) == 0:
-        if isinstance(doc, list) and any([_match_gt(d, path, ov) for d in doc]):
-            return True
-
-        if isinstance(doc, list) and isinstance(ov, list):
-            if doc > ov:
-                return True
-
-        if isinstance(doc, dict) and isinstance(ov, dict):
-            keys = zip_longest(doc.keys(), ov.keys())
-            for doc_key, ov_key in keys:
-                if doc_key is None:
-                    return False
-                if ov_key is None:
-                    return True
-                if doc_key != ov_key:
-                    return doc_key > ov_key
-                if doc_key == ov_key:
-                    if doc[doc_key] > ov[ov_key]:
-                        return True
-                    if doc[doc_key] < ov[ov_key]:
-                        return False
-            return False
-
-        if isinstance(doc, Number) and isinstance(ov, Number):
-            return operator.gt(doc, ov)
-
-        if isinstance(doc, str) and isinstance(ov, str):
-            return operator.gt(doc, ov)
-
-        return False
-
-    key = path[0]
-    rest = path[1:]
-
-    if isinstance(doc, dict) and key in doc:
-        return _match_gt(doc[key], rest, ov)
-
-    if isinstance(doc, list) and key.isdigit():
-        idx = int(key)
-        if idx < len(doc):
-            return _match_gt(doc[idx], rest, ov)
-
-    if isinstance(doc, list):
-        return any([_match_gt(d, path, ov) for d in doc])
-
-    return False
-
-
-def _match_gte(doc, path: List[str], ov) -> bool:
-    if len(path) == 0:
-        if isinstance(doc, list) and any([_match_gte(d, path, ov) for d in doc]):
-            return True
-
-        if isinstance(doc, list) and isinstance(ov, list):
-            if doc >= ov:
-                return True
-
-        if isinstance(doc, dict) and isinstance(ov, dict):
-            if not doc and not ov:
-                return True
-
-            keys = zip_longest(doc.keys(), ov.keys())
-            for doc_key, ov_key in keys:
-                if doc_key is None:
-                    return False
-                if ov_key is None:
-                    return True
-                if doc_key != ov_key:
-                    return doc_key > ov_key
-                if doc_key == ov_key:
-                    if doc[doc_key] > ov[ov_key]:
-                        return True
-                    if doc[doc_key] < ov[ov_key]:
-                        return False
-            return True
-
-        if isinstance(doc, Number) and isinstance(ov, Number):
-            return operator.ge(doc, ov)
-
-        if isinstance(doc, str) and isinstance(ov, str):
-            return operator.ge(doc, ov)
-
-        if doc is None and ov is None:
-            return True
-
-        return False
-
-    key = path[0]
-    rest = path[1:]
-
-    if isinstance(doc, dict) and key in doc:
-        return _match_gte(doc[key], rest, ov)
-
-    if isinstance(doc, list) and key.isdigit():
-        idx = int(key)
-        if idx < len(doc):
-            return _match_gte(doc[idx], rest, ov)
-
-    if isinstance(doc, list):
-        return any([_match_gte(d, path, ov) for d in doc])
-
-    if ov is None:
-        return True
-
-    return False
-
-
-def _match_lt(doc, path: List[str], ov) -> bool:
-    if len(path) == 0:
-        if isinstance(doc, list) and any([_match_lt(d, path, ov) for d in doc]):
-            return True
-
-        if isinstance(doc, list) and isinstance(ov, list):
-            if doc < ov:
-                return True
-
-        if isinstance(doc, dict) and isinstance(ov, dict):
-            if not doc and not ov:
-                return False
-
-            keys = zip_longest(doc.keys(), ov.keys())
-            for doc_key, ov_key in keys:
-                if doc_key is None:
-                    return True
-                if ov_key is None:
-                    return False
-                if doc_key != ov_key:
-                    return doc_key < ov_key
-                if doc_key == ov_key:
-                    if doc[doc_key] > ov[ov_key]:
-                        return False
-                    if doc[doc_key] < ov[ov_key]:
-                        return True
-            return False
-
-        if isinstance(doc, Number) and isinstance(ov, Number):
-            return operator.lt(doc, ov)
-
-        if isinstance(doc, str) and isinstance(ov, str):
-            return operator.lt(doc, ov)
-
-        return False
-
-    key = path[0]
-    rest = path[1:]
-
-    if isinstance(doc, dict) and key in doc:
-        return _match_lt(doc[key], rest, ov)
-
-    if isinstance(doc, list) and key.isdigit():
-        idx = int(key)
-        if idx < len(doc):
-            return _match_lt(doc[idx], rest, ov)
-
-    if isinstance(doc, list):
-        return any([_match_lt(d, path, ov) for d in doc])
-
-    return False
-
-
-def _match_lte(doc, path: List[str], ov) -> bool:
-    if len(path) == 0:
-        if isinstance(doc, list) and any([_match_lte(d, path, ov) for d in doc]):
-            return True
-
-        if isinstance(doc, list) and isinstance(ov, list):
-            if doc <= ov:
-                return True
-
-        if isinstance(doc, dict) and isinstance(ov, dict):
-            if not doc and not ov:
-                return True
-
-            keys = zip_longest(doc.keys(), ov.keys())
-            for doc_key, ov_key in keys:
-                if doc_key is None:
-                    return True
-                if ov_key is None:
-                    return False
-                if doc_key != ov_key:
-                    return doc_key < ov_key
-                if doc_key == ov_key:
-                    if doc[doc_key] < ov[ov_key]:
-                        return True
-                    if doc[doc_key] > ov[ov_key]:
-                        return False
-            return True
-
-        if isinstance(doc, Number) and isinstance(ov, Number):
-            return operator.le(doc, ov)
-
-        if isinstance(doc, str) and isinstance(ov, str):
-            return operator.le(doc, ov)
-
-        if doc is None and ov is None:
-            return True
-
-        return False
-
-    key = path[0]
-    rest = path[1:]
-
-    if isinstance(doc, dict) and key in doc:
-        return _match_lte(doc[key], rest, ov)
-
-    if isinstance(doc, list) and key.isdigit():
-        idx = int(key)
-        if idx < len(doc):
-            return _match_lte(doc[idx], rest, ov)
-
-    if isinstance(doc, list):
-        return any([_match_lte(d, path, ov) for d in doc])
-
-    if ov is None:
-        return True
-
-    return False
-
-
-def _match_mod(doc, path: List[str], ov) -> bool:
-    if len(ov) != 2:
-        raise ValueError("$mod operator value must be an array of two values")
-
-    if len(path) == 0:
-        if isinstance(doc, list) and any([_match_mod(d, path, ov) for d in doc]):
-            return True
-
-        if not isinstance(doc, Number):
-            return False
-
-        divisor = math.floor(ov[0])
-        expected_remainer = math.floor(ov[1])
-        doc_remainer = math.floor(doc % divisor)
-
-        return doc_remainer == expected_remainer
-
-    key = path[0]
-    rest = path[1:]
-
-    if isinstance(doc, dict) and key in doc:
-        return _match_mod(doc[key], rest, ov)
-
-    if isinstance(doc, list) and key.isdigit():
-        idx = int(key)
-        if idx < len(doc):
-            return _match_mod(doc[idx], rest, ov)
-
-    if isinstance(doc, list):
-        return any([_match_mod(d, path, ov) for d in doc])
-
-    return False
-
-
-def _match_all(doc, path: List[str], ov) -> bool:
-    if not isinstance(ov, list):
-        raise TypeError("$all operator value must be a list")
-
-    if len(path) == 0:
-        if not isinstance(doc, list):
-            return False
-
-        return all([o in doc or o == doc for o in ov])
-
-    key = path[0]
-    rest = path[1:]
-
-    if isinstance(doc, dict) and key in doc:
-        return _match_all(doc[key], rest, ov)
-
-    if isinstance(doc, list) and key.isdigit():
-        idx = int(key)
-        if idx < len(doc):
-            return _match_all(doc[idx], rest, ov)
-
-    if isinstance(doc, list):
-        return any([_match_all(d, path, ov) for d in doc])
-
-    return False
-
-
-def _match_elem_match(doc, path: List[str], ov) -> bool:
-    if len(path) == 0:
-        if not isinstance(doc, list):
-            return False
-
-        if any([match_cond(ov, d) for d in doc]):
-            return True
-
-        return False
-
-    key = path[0]
-    rest = path[1:]
-
-    if isinstance(doc, dict) and key in doc:
-        return _match_elem_match(doc[key], rest, ov)
-
-    if isinstance(doc, list) and key.isdigit():
-        idx = int(key)
-        if idx < len(doc):
-            return _match_elem_match(doc[idx], rest, ov)
-
-    if isinstance(doc, list):
-        return any([_match_elem_match(d, path, ov) for d in doc])
-
-    return False
-
-
-def _match_size(doc, path: List[str], ov) -> bool:
-    if len(path) == 0:
-        if not isinstance(doc, list):
-            return False
-
-        if len(doc) == ov:
-            return True
-
-        return False
-
-    key = path[0]
-    rest = path[1:]
-
-    if isinstance(doc, dict) and key in doc:
-        return _match_size(doc[key], rest, ov)
-
-    if isinstance(doc, list) and key.isdigit():
-        idx = int(key)
-        if idx < len(doc):
-            return _match_size(doc[idx], rest, ov)
-
-    if isinstance(doc, list):
-        return any([_match_size(d, path, ov) for d in doc])
-
-    return False
+def _validate(query) -> bool:
+    if not isinstance(query, dict):
+        raise TypeError("query must be a dict")
+
+    for path in query:
+        if isinstance(path, str) and path in query_ops:
+            if path == "$and":
+                if not _validate_query_ops(query["$and"]):
+                    raise TypeError("$and operator value must be a list")
+            if path == "$or":
+                if not _validate_query_ops(query["$or"]):
+                    raise TypeError("$or operator value must be a list")
+            if path == "$nor":
+                if not _validate_query_ops(query["$nor"]):
+                    raise TypeError("$nor operator value must be a list")
+            for cond in query[path]:
+                _validate(cond)
+        else:
+            exp_or_ov = query[path]
+            is_all_exp = _check_all_exp(exp_or_ov)
+            if is_all_exp:
+                exp = exp_or_ov
+                if "$in" in exp and not _validate_in_nin(exp["$in"]):
+                    raise TypeError("$in operator value must be a list")
+                if "$nin" in exp and not _validate_in_nin(exp["$nin"]):
+                    raise TypeError("$nin operator value must be a list")
+                if "$all" in exp and not _validate_all(exp["$all"]):
+                    raise TypeError("$all operator value must be a list")
+                if "$mod" in exp and not _validate_mod(exp["$mod"]):
+                    raise TypeError("$mod operator value must be a list of 2 numbers")
+                if "$size" in exp and not _validate_size(exp["$size"]):
+                    raise TypeError("$size operator value must be a number")
+
+    return True
+
+
+def _check_all_exp(exp_or_ov):
+    return (
+        exp_or_ov
+        and isinstance(exp_or_ov, dict)
+        and all(key in cond_ops for key in exp_or_ov.keys())
+    )

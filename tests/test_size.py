@@ -61,6 +61,21 @@ testcases = [
             {"foo": [{"bar": [1, 2]}, {"bar": [1, 2, 3]}]},
         ],
     ),
+    (
+        "$size with float",
+        {"foo": {"$size": 2.0}},
+        [
+            {"foo": [1, "a"]},
+            {"foo": [{}, {}]},
+            {"foo": [1, 2, 3]},
+            {"foo": []},
+            {"foo": None},
+        ],
+        [
+            {"foo": [1, "a"]},
+            {"foo": [{}, {}]},
+        ],
+    ),
 ]
 
 
@@ -72,3 +87,9 @@ def test_mgqpy_size(test_db, benchmark, name, query, input, expected):
     q = Query(query)
     actual = benchmark(get_filter_results, q.match, input)
     assert actual == expected, name
+
+
+def test_mgqpy_invalid_query():
+    query = {"foo": {"$size": "2"}}
+    q = Query(query)
+    assert q.match({"foo": ["bar", "baz"]}) is False

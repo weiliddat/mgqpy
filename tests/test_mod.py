@@ -140,10 +140,11 @@ def test_mgqpy_mod(test_db, benchmark, name, query, input, expected):
     assert actual == expected, name
 
 
-def test_mgqpy_in_validation():
-    with pytest.raises(ValueError):
-        Query({"foo": {"$mod": [1]}}).match({})
-    with pytest.raises(ValueError):
-        Query({"foo": {"$mod": []}}).match({})
-    with pytest.raises(ValueError):
-        Query({"foo": {"$mod": [1, 2, 3]}}).match({})
+def test_mgqpy_invalid_query():
+    query = {"foo": {"$mod": {"1": "0"}}}
+    q = Query(query)
+    assert q.match({"foo": 1}) is False
+
+    query = {"foo": {"$mod": ["1", "0"]}}
+    q = Query(query)
+    assert q.match({"foo": 1}) is False
