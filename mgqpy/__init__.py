@@ -63,68 +63,71 @@ class Query:
         pass
 
     def match(self, doc) -> bool:
-        return match_cond(self._query, doc)
+        return _match_cond(self._query, doc)
+
+    def validate(self):
+        _validate(self._query)
+        return self
 
 
-def match_cond(query, doc):
+def _match_cond(query, doc):
     results: List[bool] = []
 
     for path in query:
         if isinstance(path, str) and path in query_ops:
             if path == "$and":
                 for cond in query[path]:
-                    results.append(match_cond(cond, doc))
+                    results.append(_match_cond(cond, doc))
             if path == "$or":
-                results.append(any([match_cond(cond, doc) for cond in query[path]]))
+                results.append(any([_match_cond(cond, doc) for cond in query[path]]))
             if path == "$nor":
-                results.append(not any([match_cond(cond, doc) for cond in query[path]]))
+                results.append(
+                    not any([_match_cond(cond, doc) for cond in query[path]])
+                )
         else:
             exp_or_ov = query[path]
-            is_all_ops = (
-                exp_or_ov
-                and isinstance(exp_or_ov, dict)
-                and all(key in cond_ops for key in exp_or_ov.keys())
-            )
-
+            is_all_exp = _check_all_exp(exp_or_ov)
             path_parts = path.split(".")
 
-            if is_all_ops:
-                if "$eq" in exp_or_ov:
-                    results.append(_match_eq(doc, path_parts, exp_or_ov["$eq"]))
-                if "$ne" in exp_or_ov:
-                    results.append(_match_ne(doc, path_parts, exp_or_ov["$ne"]))
-                if "$gt" in exp_or_ov:
-                    results.append(_match_gt(doc, path_parts, exp_or_ov["$gt"]))
-                if "$gte" in exp_or_ov:
-                    results.append(_match_gte(doc, path_parts, exp_or_ov["$gte"]))
-                if "$lt" in exp_or_ov:
-                    results.append(_match_lt(doc, path_parts, exp_or_ov["$lt"]))
-                if "$lte" in exp_or_ov:
-                    results.append(_match_lte(doc, path_parts, exp_or_ov["$lte"]))
-                if "$in" in exp_or_ov:
-                    results.append(_match_in(doc, path_parts, exp_or_ov["$in"]))
-                if "$nin" in exp_or_ov:
-                    results.append(_match_nin(doc, path_parts, exp_or_ov["$nin"]))
-                if "$not" in exp_or_ov:
-                    results.append(not match_cond({path: exp_or_ov["$not"]}, doc))
-                if "$regex" in exp_or_ov:
+            if is_all_exp:
+                exp = exp_or_ov
+                if "$eq" in exp:
+                    results.append(_match_eq(doc, path_parts, exp["$eq"]))
+                if "$ne" in exp:
+                    results.append(_match_ne(doc, path_parts, exp["$ne"]))
+                if "$gt" in exp:
+                    results.append(_match_gt(doc, path_parts, exp["$gt"]))
+                if "$gte" in exp:
+                    results.append(_match_gte(doc, path_parts, exp["$gte"]))
+                if "$lt" in exp:
+                    results.append(_match_lt(doc, path_parts, exp["$lt"]))
+                if "$lte" in exp:
+                    results.append(_match_lte(doc, path_parts, exp["$lte"]))
+                if "$in" in exp:
+                    results.append(_match_in(doc, path_parts, exp["$in"]))
+                if "$nin" in exp:
+                    results.append(_match_nin(doc, path_parts, exp["$nin"]))
+                if "$not" in exp:
+                    results.append(not _match_cond({path: exp["$not"]}, doc))
+                if "$regex" in exp:
                     ov = {
-                        "$regex": exp_or_ov["$regex"],
-                        "$options": exp_or_ov.get("$options", ""),
+                        "$regex": exp["$regex"],
+                        "$options": exp.get("$options", ""),
                     }
                     results.append(_match_regex(doc, path_parts, ov))
-                if "$mod" in exp_or_ov:
-                    results.append(_match_mod(doc, path_parts, exp_or_ov["$mod"]))
-                if "$all" in exp_or_ov:
-                    results.append(_match_all(doc, path_parts, exp_or_ov["$all"]))
-                if "$elemMatch" in exp_or_ov:
+                if "$mod" in exp:
+                    results.append(_match_mod(doc, path_parts, exp["$mod"]))
+                if "$all" in exp:
+                    results.append(_match_all(doc, path_parts, exp["$all"]))
+                if "$elemMatch" in exp:
                     results.append(
-                        _match_elem_match(doc, path_parts, exp_or_ov["$elemMatch"])
+                        _match_elem_match(doc, path_parts, exp["$elemMatch"])
                     )
-                if "$size" in exp_or_ov:
-                    results.append(_match_size(doc, path_parts, exp_or_ov["$size"]))
+                if "$size" in exp:
+                    results.append(_match_size(doc, path_parts, exp["$size"]))
             else:
-                results.append(_match_eq(doc, path_parts, exp_or_ov))
+                ov = exp_or_ov
+                results.append(_match_eq(doc, path_parts, ov))
 
     return all(results)
 
@@ -208,7 +211,7 @@ def _match_regex(doc, path: List[str], ov) -> bool:
 
 def _match_in(doc, path: List[str], ov) -> bool:
     if not isinstance(ov, list):
-        raise TypeError("$in operator value must be a list")
+        return False
 
     if len(path) == 0:
         if isinstance(doc, list) and any([_match_in(d, path, ov) for d in doc]):
@@ -237,6 +240,9 @@ def _match_in(doc, path: List[str], ov) -> bool:
 
 
 def _match_nin(doc, path: List[str], ov) -> bool:
+    if not isinstance(ov, list):
+        return False
+
     return not _match_in(doc, path, ov)
 
 
@@ -527,7 +533,7 @@ def _match_elem_match(doc, path: List[str], ov) -> bool:
         if not isinstance(doc, list):
             return False
 
-        if any([match_cond(ov, d) for d in doc]):
+        if any([_match_cond(ov, d) for d in doc]):
             return True
 
         return False
@@ -574,3 +580,37 @@ def _match_size(doc, path: List[str], ov) -> bool:
         return any([_match_size(d, path, ov) for d in doc])
 
     return False
+
+
+def _check_all_exp(exp_or_ov):
+    return (
+        exp_or_ov
+        and isinstance(exp_or_ov, dict)
+        and all(key in cond_ops for key in exp_or_ov.keys())
+    )
+
+
+def _validate(query) -> bool:
+    if not isinstance(query, dict):
+        raise TypeError("query must be a dict")
+
+    for path in query:
+        if isinstance(path, str) and path in query_ops:
+            if path == "$and":
+                if not isinstance(query["$and"], list):
+                    raise TypeError("$and operator value must be a list")
+                for cond in query[path]:
+                    _validate(cond)
+        else:
+            exp_or_ov = query[path]
+            is_all_exp = _check_all_exp(exp_or_ov)
+            if is_all_exp:
+                exp = exp_or_ov
+                if "$in" in exp:
+                    if not isinstance(exp["$in"], list):
+                        raise TypeError("$in operator value must be a list")
+                if "$nin" in exp:
+                    if not isinstance(exp["$nin"], list):
+                        raise TypeError("$nin operator value must be a list")
+
+    return True

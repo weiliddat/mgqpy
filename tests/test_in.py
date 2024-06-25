@@ -129,6 +129,7 @@ def test_mgqpy_in(test_db, benchmark, name, query, input, expected):
     assert actual == expected, name
 
 
-def test_mgqpy_in_validation():
-    with pytest.raises(TypeError):
-        Query({"foo": {"$in": "str"}}).match({})
+def test_mgqpy_invalid_query():
+    query = {"foo": {"$in": "str"}}
+    q = Query(query)
+    assert q.match({"foo": "str"}) is False

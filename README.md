@@ -14,6 +14,12 @@ pip install mgqpy
 
 ## Usage
 
+Test if an input matches the query.
+
+Invalid queries (e.g. using $and without a list) will automatically return False.
+
+Use the `validate` method to raise errors if there's a problem with the query.
+
 ```python
 from mgqpy import Query
 
@@ -32,6 +38,21 @@ assert list(filtered) == [
     {"foo": [{"bar": [1, 2]}]},
     {"foo": {"bar": 2}},
 ]
+```
+
+Validating the query given.
+
+`validate` returns the `Query` instance so you can chain `match` if you wish to validate and test against an input.
+
+```python
+from mgqpy import Query
+
+predicate = Query({"foo": {"$in": 1}})
+
+try:
+    predicate.validate()
+except TypeError as e:
+    # ...
 ```
 
 ## Supported operators
