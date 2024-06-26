@@ -14,7 +14,7 @@ pip install mgqpy
 
 ## Usage
 
-Test if an input matches the query.
+Test if an input satisfies a query.
 
 Invalid queries (e.g. using $and without a list) will automatically return False.
 
@@ -32,7 +32,7 @@ inputs = [
     {"foo": None},
 ]
 
-filtered = filter(predicate.match, inputs)
+filtered = filter(predicate.test, inputs)
 
 assert list(filtered) == [
     {"foo": [{"bar": [1, 2]}]},
@@ -51,10 +51,12 @@ except TypeError as e:
     # ...
 ```
 
-`validate` returns the `Query` instance so you can chain `match` if you wish to validate and test against an input in one go.
+`validate` returns the `Query` instance so you can chain `test` if you wish to validate and test against an input in one go.
 
 ```python
-predicate.validate().match({"foo": 1})
+input = {"foo": 1}
+
+predicate.validate().test(input)
 ```
 
 ## Supported operators

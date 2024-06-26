@@ -85,11 +85,11 @@ def test_mgqpy_size(test_db, benchmark, name, query, input, expected):
     assert expected == mongo_expected, name
 
     q = Query(query)
-    actual = benchmark(get_filter_results, q.match, input)
+    actual = benchmark(get_filter_results, q.test, input)
     assert actual == expected, name
 
 
 def test_mgqpy_invalid_query():
     query = {"foo": {"$size": "2"}}
     q = Query(query)
-    assert q.match({"foo": ["bar", "baz"]}) is False
+    assert q.test({"foo": ["bar", "baz"]}) is False

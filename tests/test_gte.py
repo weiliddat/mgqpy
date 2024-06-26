@@ -268,5 +268,5 @@ def test_mgqpy_gte(test_db, benchmark, name, query, input, expected):
     assert expected == mongo_expected, name
 
     q = Query(query)
-    actual = benchmark(get_filter_results, q.match, input)
+    actual = benchmark(get_filter_results, q.test, input)
     assert actual == expected, name

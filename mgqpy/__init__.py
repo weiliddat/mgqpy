@@ -70,7 +70,7 @@ class Query:
         self._query = query
         pass
 
-    def match(self, doc) -> bool:
+    def test(self, doc) -> bool:
         return _match_cond(self._query, doc)
 
     def validate(self):

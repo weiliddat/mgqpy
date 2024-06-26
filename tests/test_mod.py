@@ -136,15 +136,15 @@ def test_mgqpy_mod(test_db, benchmark, name, query, input, expected):
     assert expected == mongo_expected, name
 
     q = Query(query)
-    actual = benchmark(get_filter_results, q.match, input)
+    actual = benchmark(get_filter_results, q.test, input)
     assert actual == expected, name
 
 
 def test_mgqpy_invalid_query():
     query = {"foo": {"$mod": {"1": "0"}}}
     q = Query(query)
-    assert q.match({"foo": 1}) is False
+    assert q.test({"foo": 1}) is False
 
     query = {"foo": {"$mod": ["1", "0"]}}
     q = Query(query)
-    assert q.match({"foo": 1}) is False
+    assert q.test({"foo": 1}) is False
