@@ -1,6 +1,7 @@
 # mgqpy
 
 [![codecov](https://codecov.io/gh/weiliddat/mgqpy/graph/badge.svg?token=CuQS0w5IkL)](https://codecov.io/gh/weiliddat/mgqpy)
+![PyPI - Version](https://img.shields.io/pypi/v/mgqpy)
 
 [MongoDB query](https://www.mongodb.com/docs/manual/reference/operator/query/) as a predicate function
 
