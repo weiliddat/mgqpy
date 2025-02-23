@@ -88,6 +88,8 @@ def test_mgqpy_in_nin_validation():
 def test_mgqpy_all_validation():
     Query({"foo": {"$all": ["bar", "baz"]}}).validate()
 
+    Query({"foo": {"$all": []}}).validate()
+
     Query({"foo": {"$all": [{"$elemMatch": {"bar": "baz"}}]}}).validate()
 
     with pytest.raises(TypeError):

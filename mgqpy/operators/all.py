@@ -7,6 +7,9 @@ def _match_all(doc, path: List[str], ov) -> bool:
     if not _validate_all(ov):
         return False
 
+    if len(ov) == 0:
+        return False
+
     if _is_all_elem_match(ov):
         elem_match_query = {"$and": [{".".join(path): o} for o in ov]}
         return mgqpy._match_cond(elem_match_query, doc)

@@ -151,7 +151,7 @@ testcases = [
         ],
     ),
     (
-        "$and with other $ subquery",
+        "$all with other $ subquery",
         {
             "foo": {
                 "$all": [
@@ -159,6 +159,15 @@ testcases = [
                 ]
             }
         },
+        [
+            {"foo": [{"bar": "baz"}, {"bar": "qux"}]},
+            {"foo": [{"bar": {"$eq": "baz"}}, {"bar": {"$eq": "qux"}}]},
+        ],
+        [],
+    ),
+    (
+        "$all with empty ov",
+        {"foo": {"$all": []}},
         [
             {"foo": [{"bar": "baz"}, {"bar": "qux"}]},
             {"foo": [{"bar": {"$eq": "baz"}}, {"bar": {"$eq": "qux"}}]},
