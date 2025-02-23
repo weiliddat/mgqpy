@@ -88,11 +88,16 @@ def test_mgqpy_in_nin_validation():
 def test_mgqpy_all_validation():
     Query({"foo": {"$all": ["bar", "baz"]}}).validate()
 
+    Query({"foo": {"$all": [{"$elemMatch": {"bar": "baz"}}]}}).validate()
+
     with pytest.raises(TypeError):
         Query({"foo": {"$all": "not-a-list"}}).validate()
 
     with pytest.raises(TypeError):
         Query({"foo": {"$all": {"foo": "bar"}}}).validate()
+
+    with pytest.raises(TypeError):
+        Query({"foo": {"$all": [{"$and": "not-allowed"}]}}).validate()
 
 
 def test_mgqpy_mod_validation():
