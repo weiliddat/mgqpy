@@ -11,8 +11,6 @@ def _match_gt(doc, path: List[str], ov) -> bool:
         if isinstance(doc, list) and any([_match_gt(d, path, ov) for d in doc]):
             return True
 
-        doc, ov = coerce(doc, ov)
-
         if isinstance(doc, list) and isinstance(ov, list):
             if doc > ov:
                 return True
@@ -33,17 +31,13 @@ def _match_gt(doc, path: List[str], ov) -> bool:
                         return False
             return False
 
-        if isinstance(doc, Number) and isinstance(ov, Number):
-            return operator.gt(doc, ov)  # type: ignore
-
-        if isinstance(doc, str) and isinstance(ov, str):
-            return operator.gt(doc, ov)
-
-        # Fallback to rich comparison if possible (e.g. datetime)
         try:
+            doc, ov = coerce(doc, ov)
             return operator.gt(doc, ov)
         except Exception:
-            return False
+            pass
+
+        return False
 
     key = path[0]
     rest = path[1:]

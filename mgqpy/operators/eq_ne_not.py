@@ -11,13 +11,11 @@ def _match_eq(doc, path: List[str], ov) -> bool:
         if isinstance(doc, list) and any([_match_eq(d, path, ov) for d in doc]):
             return True
 
-        # Regex special-case takes precedence
         if isinstance(ov, re.Pattern) and isinstance(doc, str):
             return bool(ov.search(doc))
 
-        # Generic equality with type coercion
-        doc_coerced, ov_coerced = coerce(doc, ov)
-        return doc_coerced == ov_coerced
+        doc, ov = coerce(doc, ov)
+        return doc == ov
 
     key = path[0]
     rest = path[1:]

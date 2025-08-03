@@ -11,8 +11,6 @@ def _match_gte(doc, path: List[str], ov) -> bool:
         if isinstance(doc, list) and any([_match_gte(d, path, ov) for d in doc]):
             return True
 
-        doc, ov = coerce(doc, ov)
-
         if isinstance(doc, list) and isinstance(ov, list):
             if doc >= ov:
                 return True
@@ -36,19 +34,14 @@ def _match_gte(doc, path: List[str], ov) -> bool:
                         return False
             return True
 
-        if isinstance(doc, Number) and isinstance(ov, Number):
-            return operator.ge(doc, ov)  # type: ignore
-
-        if isinstance(doc, str) and isinstance(ov, str):
-            return operator.ge(doc, ov)
+        if doc is None and ov is None:
+            return True
 
         try:
+            doc, ov = coerce(doc, ov)
             return operator.ge(doc, ov)
         except Exception:
             pass
-
-        if doc is None and ov is None:
-            return True
 
         return False
 

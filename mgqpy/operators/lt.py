@@ -11,8 +11,6 @@ def _match_lt(doc, path: List[str], ov) -> bool:
         if isinstance(doc, list) and any([_match_lt(d, path, ov) for d in doc]):
             return True
 
-        doc, ov = coerce(doc, ov)
-
         if isinstance(doc, list) and isinstance(ov, list):
             if doc < ov:
                 return True
@@ -36,13 +34,8 @@ def _match_lt(doc, path: List[str], ov) -> bool:
                         return True
             return False
 
-        if isinstance(doc, Number) and isinstance(ov, Number):
-            return operator.lt(doc, ov)  # type: ignore
-
-        if isinstance(doc, str) and isinstance(ov, str):
-            return operator.lt(doc, ov)
-
         try:
+            doc, ov = coerce(doc, ov)
             return operator.lt(doc, ov)
         except Exception:
             pass
