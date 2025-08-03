@@ -19,18 +19,6 @@ import pytest
 from mgqpy import Query
 
 
-@pytest.fixture()
-def fruit_basket_dict():
-    """Dictionary shaped like the output of a dumped Pydantic model."""
-
-    return {
-        "fruits": [
-            {"type": "berry", "harvested": _dt.date(2024, 8, 1)},
-            {"type": "aggregate", "harvested": _dt.date(2024, 8, 2)},
-    ]
-}
-
-
 @pytest.mark.parametrize(
     "doc, query, expected",
     [
@@ -49,11 +37,15 @@ def fruit_basket_dict():
             {"ts": {"$lt": _dt.datetime(2025, 8, 1)}},
             True,
         ),
+        (
+            {"ts": "asdf"},
+            {"ts": {"$eq": _dt.datetime(2025, 8, 1)}},
+            False,
+        ),
     ],
 )
 def test_datetime_coercion(doc, query, expected):
     assert Query(query).test(doc) is expected
-
 
 
 def test_datetime_with_timezone():
@@ -63,14 +55,41 @@ def test_datetime_with_timezone():
     assert Query({"ts": {"$eq": aware}}).test({"ts": "2025-07-31T10:00:00+00:00"})
 
 
+@pytest.fixture()
+def fruit_basket_dict():
+    """Dictionary shaped like the output of a dumped Pydantic model."""
+
+    return {
+        "fruits": [
+            {"type": "berry", "harvested": _dt.date(2024, 8, 1)},
+            {"type": "aggregate", "harvested": _dt.date(2024, 8, 2)},
+        ]
+    }
+
+
 @pytest.mark.parametrize(
     "query, expected",
     [
-        ({"fruits.0.harvested": {"$eq": "2024-08-01"}}, True),
-        ({"fruits.1.type": {"$eq": "aggregate"}}, True),
-        ({"fruits.harvested": {"$in": ["2024-08-02"]}}, True),
-        ({"fruits.0.harvested": {"$gt": "2024-07-31"}}, True),
-        ({"fruits.0.harvested": {"$lt": "2024-08-02"}}, True),
+        (
+            {"fruits.0.harvested": {"$eq": "2024-08-01"}},
+            True,
+        ),
+        (
+            {"fruits.1.type": {"$eq": "aggregate"}},
+            True,
+        ),
+        (
+            {"fruits.harvested": {"$in": ["2024-08-02"]}},
+            True,
+        ),
+        (
+            {"fruits.0.harvested": {"$gt": "2024-07-31"}},
+            True,
+        ),
+        (
+            {"fruits.0.harvested": {"$lt": "2024-08-02"}},
+            True,
+        ),
     ],
 )
 def test_date_coercion(fruit_basket_dict, query, expected):
@@ -80,9 +99,31 @@ def test_date_coercion(fruit_basket_dict, query, expected):
 @pytest.mark.parametrize(
     "doc, query, expected",
     [
-        ({"x": _dec.Decimal("3.14")}, {"x": {"$eq": "3.14"}}, True),
-        ({"x": "2.71"}, {"x": {"$eq": _dec.Decimal("2.71")}}, True),
-        ({"x": _dec.Decimal("10")}, {"x": {"$gt": "9"}}, True),
+        (
+            {"x": _dec.Decimal("3.14")},
+            {"x": {"$eq": "3.14"}},
+            True,
+        ),
+        (
+            {"x": "2.71"},
+            {"x": {"$eq": _dec.Decimal("2.71")}},
+            True,
+        ),
+        (
+            {"x": _dec.Decimal("10")},
+            {"x": {"$gt": "9"}},
+            True,
+        ),
+        (
+            {"x": _dec.Decimal("10")},
+            {"x": {"$gt": _dec.Decimal("9")}},
+            True,
+        ),
+        (
+            {"x": _dec.Decimal("10")},
+            {"x": {"$gt": "a"}},
+            False,
+        ),
     ],
 )
 def test_decimal_coercion(doc, query, expected):
@@ -92,8 +133,21 @@ def test_decimal_coercion(doc, query, expected):
 @pytest.mark.parametrize(
     "doc, query, expected",
     [
-        ({"u": _uuid.UUID("0123456789abcdef0123456789abcdef")}, {"u": {"$eq": "0123456789abcdef0123456789abcdef"}}, True),
-        ({"u": "0123456789abcdef0123456789abcdef"}, {"u": {"$eq": _uuid.UUID("0123456789abcdef0123456789abcdef")}}, True),
+        (
+            {"u": _uuid.UUID("0123456789abcdef0123456789abcdef")},
+            {"u": {"$eq": "0123456789abcdef0123456789abcdef"}},
+            True,
+        ),
+        (
+            {"u": "0123456789abcdef0123456789abcdef"},
+            {"u": {"$eq": _uuid.UUID("0123456789abcdef0123456789abcdef")}},
+            True,
+        ),
+        (
+            {"u": ["123", None, _uuid.uuid1(), "0123456789abcdef0123456789abcdef"]},
+            {"u": {"$eq": _uuid.UUID("0123456789abcdef0123456789abcdef")}},
+            True,
+        ),
     ],
 )
 def test_uuid_coercion(doc, query, expected):

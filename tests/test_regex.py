@@ -162,6 +162,22 @@ testcases = [
         ],
     ),
     (
+        "implicit $regex with nested dict/lists",
+        {"foo.bar": re.compile("^baz", re.IGNORECASE)},
+        [
+            {"foo": {}},
+            {"foo": None},
+            {"foo": 1},
+            {"foo": "bar"},
+            {"foo": {"bar": ["qux", "baz"]}},
+            {"foo": [{"bar": ["qux"]}, {"bar": "baz"}]},
+        ],
+        [
+            {"foo": {"bar": ["qux", "baz"]}},
+            {"foo": [{"bar": ["qux"]}, {"bar": "baz"}]},
+        ],
+    ),
+    (
         "$in with implicit $regex",
         {
             "foo": {
