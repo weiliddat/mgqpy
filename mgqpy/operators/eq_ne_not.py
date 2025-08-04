@@ -1,6 +1,8 @@
 import re
 from typing import List
 
+from mgqpy.utils import coerce
+
 import mgqpy
 
 
@@ -10,9 +12,9 @@ def _match_eq(doc, path: List[str], ov) -> bool:
             return True
 
         if isinstance(ov, re.Pattern) and isinstance(doc, str):
-            if ov.search(doc):
-                return True
+            return bool(ov.search(doc))
 
+        doc, ov = coerce(doc, ov)
         return doc == ov
 
     key = path[0]

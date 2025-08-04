@@ -3,6 +3,8 @@ from itertools import zip_longest
 from numbers import Number
 from typing import List
 
+from mgqpy.utils import coerce
+
 
 def _match_gt(doc, path: List[str], ov) -> bool:
     if len(path) == 0:
@@ -29,11 +31,11 @@ def _match_gt(doc, path: List[str], ov) -> bool:
                         return False
             return False
 
-        if isinstance(doc, Number) and isinstance(ov, Number):
-            return operator.gt(doc, ov)  # type: ignore
-
-        if isinstance(doc, str) and isinstance(ov, str):
+        try:
+            doc, ov = coerce(doc, ov)
             return operator.gt(doc, ov)
+        except Exception:
+            pass
 
         return False
 
