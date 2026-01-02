@@ -86,6 +86,10 @@ def fruit_basket_dict():
             True,
         ),
         (
+            {"fruits.0.harvested": {"$eq": _dt.date(2024, 8, 1)}},
+            True,
+        ),
+        (
             {"fruits.1.type": {"$eq": "aggregate"}},
             True,
         ),
@@ -105,6 +109,12 @@ def fruit_basket_dict():
 )
 def test_date_coercion(fruit_basket_dict, query, expected):
     assert Query(query).test(fruit_basket_dict) is expected
+
+
+def test_date_filter_string_doc():
+    assert Query({"harvested": {"$eq": _dt.date(2024, 8, 1)}}).test(
+        {"harvested": "2024-08-01"}
+    )
 
 
 @pytest.mark.parametrize(
