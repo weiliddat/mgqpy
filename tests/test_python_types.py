@@ -28,6 +28,16 @@ from mgqpy import Query
             True,
         ),
         (
+            {"ts": _dt.datetime(2025, 7, 31, 0, 0, 0)},
+            {"ts": {"$eq": "2025-07-31"}},
+            True,
+        ),
+        (
+            {"ts": _dt.datetime(2025, 7, 31, 12, 0, 0)},
+            {"ts": {"$gt": "2025-07-31"}},
+            True,
+        ),
+        (
             {"ts": _dt.datetime(2025, 7, 31, 12, 0, 0)},
             {"ts": {"$gt": "2025-07-30T23:59:59"}},
             True,
@@ -53,6 +63,7 @@ def test_datetime_with_timezone():
 
     assert Query({"ts": {"$eq": "2025-07-31T10:00:00+00:00"}}).test({"ts": aware})
     assert Query({"ts": {"$eq": aware}}).test({"ts": "2025-07-31T10:00:00+00:00"})
+    assert Query({"ts": {"$gt": "2025-07-31"}}).test({"ts": aware})
 
 
 @pytest.fixture()
