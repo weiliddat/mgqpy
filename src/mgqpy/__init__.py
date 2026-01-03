@@ -1,7 +1,3 @@
-"""mongo query as a predicate function"""
-
-__version__ = "0.7.2"
-
 # Terminology
 #
 # Query refers to the document that is passed to the compiler / mongodb find that holds
