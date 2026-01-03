@@ -64,6 +64,7 @@ def test_datetime_with_timezone():
     assert Query({"ts": {"$eq": "2025-07-31T10:00:00+00:00"}}).test({"ts": aware})
     assert Query({"ts": {"$eq": aware}}).test({"ts": "2025-07-31T10:00:00+00:00"})
     assert Query({"ts": {"$gt": "2025-07-31"}}).test({"ts": aware})
+    assert Query({"ts": {"$eq": "2025-07-31T10:00:00"}}).test({"ts": aware})
 
 
 @pytest.fixture()
@@ -74,6 +75,7 @@ def fruit_basket_dict():
         "fruits": [
             {"type": "berry", "harvested": _dt.date(2024, 8, 1)},
             {"type": "aggregate", "harvested": _dt.date(2024, 8, 2)},
+            {"type": "hybrid", "harvested": "2024-08-03"},
         ]
     }
 
@@ -105,16 +107,14 @@ def fruit_basket_dict():
             {"fruits.0.harvested": {"$lt": "2024-08-02"}},
             True,
         ),
+        (
+            {"fruits.2.harvested": {"$eq": _dt.date(2024, 8, 3)}},
+            True,
+        ),
     ],
 )
 def test_date_coercion(fruit_basket_dict, query, expected):
     assert Query(query).test(fruit_basket_dict) is expected
-
-
-def test_date_filter_string_doc():
-    assert Query({"harvested": {"$eq": _dt.date(2024, 8, 1)}}).test(
-        {"harvested": "2024-08-01"}
-    )
 
 
 @pytest.mark.parametrize(
