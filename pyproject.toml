@@ -21,10 +21,6 @@ pythonpath = ["."]
 testpaths = ["tests"]
 addopts = ["--benchmark-disable", "--benchmark-autosave"]
 
-[tool.flit.sdist]
-include = ["mgqpy/"]
-exclude = ["tests/", "requirements-dev.txt", "compose.yml"]
-
 [dependency-groups]
 dev = [
     "pymongo>=4.15.5",
