@@ -120,3 +120,23 @@ def test_mgqpy_size_validation():
 
     with pytest.raises(TypeError):
         Query({"foo": {"$size": ["a", "b"]}}).validate()
+
+
+def test_mgqpy_unknown_operator_validation():
+    Query({"foo": {"$exists": True}}).validate()
+    Query({"foo": {"bar": "baz"}}).validate()
+
+    with pytest.raises(TypeError, match=r"\$where"):
+        Query({"$where": "this.foo"}).validate()
+
+    with pytest.raises(TypeError, match=r"\$type"):
+        Query({"foo": {"$type": "string"}}).validate()
+
+    with pytest.raises(TypeError, match=r"\$type"):
+        Query({"$or": [{"foo": "bar"}, {"foo": {"$type": "string"}}]}).validate()
+
+    with pytest.raises(TypeError, match=r"\$type"):
+        Query({"foo": {"$not": {"$type": "string"}}}).validate()
+
+    with pytest.raises(TypeError, match=r"\$type"):
+        Query({"foo": {"$elemMatch": {"bar": {"$type": "string"}}}}).validate()
