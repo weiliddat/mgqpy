@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+SECONDS=0
+
+# uv and Python are included in the orb base image. Use the same locked install as CI.
+echo "Installing Python development dependencies"
+uv sync --locked --dev
+echo "Python dependencies ready (${SECONDS}s elapsed)"
+
+# Install only the server, not Docker or the full MongoDB client/tool bundle.
+if [[ "$(dpkg-query -W -f='${Status} ${Version}' mongodb-org-server 2>/dev/null || true)" != 'install ok installed 7.0.'* ]]; then
+    echo "Installing MongoDB 7"
+    sudo install -d -m 0755 /etc/apt/keyrings
+    curl -fsSL https://pgp.mongodb.com/server-7.0.asc | sudo tee /etc/apt/keyrings/mongodb-server-7.0.asc >/dev/null
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/mongodb-server-7.0.asc] https://repo.mongodb.org/apt/debian bookworm/mongodb-org/7.0 main" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list >/dev/null
+    sudo apt-get update
+    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends 'mongodb-org-server=7.0.*'
+fi
+
+echo "Orb setup ready (${SECONDS}s elapsed); MongoDB starts via .agents/resume"

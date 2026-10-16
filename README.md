@@ -13,6 +13,20 @@ This aims to be consistent with how MongoDB's matches documents. This includes t
 pip install mgqpy
 ```
 
+## Development
+
+Install development dependencies with `uv sync --locked --dev`. Tests compare
+results against MongoDB 7 on localhost:27017. Outside an Amp orb, start it with
+`docker compose up --detach --wait`, then run `uv run pytest`.
+
+Amp orbs use `.agents/setup` to install the locked Python dependencies and a
+native MongoDB 7 server into the reusable project snapshot. `.agents/resume`
+ensures the supervised MongoDB service is running after activation and wake;
+it does not reinstall dependencies. MongoDB listens only on loopback, requires
+no credentials, and stores disposable test data in `.amp/mongo/`.
+Use `amp orb services ensure` to start or repair it manually and
+`amp orb service logs mongo` to inspect its logs.
+
 ## Usage
 
 Test if an input satisfies a query.
