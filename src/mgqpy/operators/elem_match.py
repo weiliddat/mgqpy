@@ -9,8 +9,13 @@ def _match_elem_match(doc, path: List[str], ov) -> bool:
         if not isinstance(doc, list):
             return False
 
-        if any(mgqpy._match_cond(ov, d) for d in doc):
-            return True
+        # MongoDB matches the query only against elements that are documents,
+        # reading a nested list as a document keyed by index
+        for d in doc:
+            if isinstance(d, list):
+                d = {str(i): v for i, v in enumerate(d)}
+            if isinstance(d, dict) and mgqpy._match_cond(ov, d):
+                return True
 
         return False
 

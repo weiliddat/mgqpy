@@ -33,7 +33,7 @@ Test if an input satisfies a query.
 
 Invalid queries (e.g. using $and without a list) will automatically return False.
 
-Use the `validate` method to raise errors if there's a problem with the query.
+Use the `validate` method to raise errors if there's a problem with the query, including an operator mgqpy does not support (e.g. `$type`, or `$elemMatch` with operators on values like `{"$elemMatch": {"$gt": 1}}`). `test` cannot evaluate these and usually returns False for them.
 
 ```python
 from mgqpy import Query
@@ -95,6 +95,10 @@ Logical query operators
 - [x] \$or
 - [x] \$not
 - [x] \$nor
+
+Element query operators
+
+- [x] \$exists
 
 Evaluation query operators
 

@@ -24,9 +24,10 @@
 from typing import List
 
 from .operators.and_or_nor import _match_and, _match_or, _match_nor, _validate_query_ops
-from .operators.all import _match_all, _validate_all
+from .operators.all import _match_all, _validate_all, _is_all_elem_match
 from .operators.elem_match import _match_elem_match
 from .operators.eq_ne_not import _match_eq, _match_ne, _match_not
+from .operators.exists import _match_exists
 from .operators.gt import _match_gt
 from .operators.gte import _match_gte
 from .operators.in_nin import _match_in, _match_nin, _validate_in_nin
@@ -52,6 +53,7 @@ cond_ops = {
     "$all",
     "$elemMatch",
     "$size",
+    "$exists",
 }
 
 query_ops = {
@@ -126,6 +128,8 @@ def _match_cond(query, doc):
                     )
                 if "$size" in exp:
                     results.append(_match_size(doc, path_parts, exp["$size"]))
+                if "$exists" in exp:
+                    results.append(_match_exists(doc, path_parts, exp["$exists"]))
             else:
                 ov = exp_or_ov
                 results.append(_match_eq(doc, path_parts, ov))
@@ -138,6 +142,8 @@ def _validate(query) -> bool:
         raise TypeError("query must be a dict")
 
     for path in query:
+        if isinstance(path, str) and path.startswith("$") and path not in query_ops:
+            raise TypeError(f"unknown top-level operator: {path}")
         if isinstance(path, str) and path in query_ops:
             if path == "$and":
                 if not _validate_query_ops(query["$and"]):
@@ -153,8 +159,29 @@ def _validate(query) -> bool:
         else:
             exp_or_ov = query[path]
             is_all_exp = _check_all_exp(exp_or_ov)
+            # Like MongoDB, a dict whose first key starts with $ is an operator
+            # expression; any other dict is a literal value to compare against
+            if not is_all_exp and isinstance(exp_or_ov, dict) and exp_or_ov:
+                first = next(iter(exp_or_ov))
+                if isinstance(first, str) and first.startswith("$"):
+                    unknown = next(k for k in exp_or_ov if k not in cond_ops)
+                    raise TypeError(f"unknown operator: {unknown}")
             if is_all_exp:
                 exp = exp_or_ov
+                if "$not" in exp and isinstance(exp["$not"], dict):
+                    _validate({path: exp["$not"]})
+                if "$elemMatch" in exp:
+                    elem = exp["$elemMatch"]
+                    if not isinstance(elem, dict):
+                        raise TypeError("$elemMatch operator value must be a dict")
+                    if _check_all_exp(elem):
+                        raise TypeError(
+                            "$elemMatch with operators on values is not supported"
+                        )
+                    _validate(elem)
+                if "$all" in exp and _is_all_elem_match(exp["$all"]):
+                    for elem_match in exp["$all"]:
+                        _validate({path: elem_match})
                 if "$in" in exp and not _validate_in_nin(exp["$in"]):
                     raise TypeError("$in operator value must be a list")
                 if "$nin" in exp and not _validate_in_nin(exp["$nin"]):
