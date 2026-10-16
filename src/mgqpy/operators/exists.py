@@ -1,9 +1,10 @@
+import numbers
 from typing import List
 
 
 def _match_exists(doc, path: List[str], ov) -> bool:
     # MongoDB reads only false, null and numeric zero as false; "", [] and {} are true
-    want = not (ov is None or (isinstance(ov, (int, float)) and ov == 0))
+    want = not (ov is None or (isinstance(ov, numbers.Number) and ov == 0))
     return _path_exists(doc, path) == want
 
 

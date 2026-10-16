@@ -83,6 +83,20 @@ testcases = [
             {"foo": [{"bar": [{}, 2, {"g": "f", "a": "b", "c": "d"}]}]},
         ],
     ),
+    (
+        "$elemMatch skips scalar elements and reads nested lists by index",
+        {"foo": {"$elemMatch": {"bar": {"$exists": False}}}},
+        [
+            {"foo": [1, 2]},
+            {"foo": [{"bar": 1}, 3]},
+            {"foo": [[{"bar": 1}]]},
+            {"foo": [{"bar": 1}, {"baz": 1}]},
+        ],
+        [
+            {"foo": [[{"bar": 1}]]},
+            {"foo": [{"bar": 1}, {"baz": 1}]},
+        ],
+    ),
 ]
 
 

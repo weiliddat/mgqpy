@@ -125,6 +125,11 @@ def test_mgqpy_size_validation():
 def test_mgqpy_unknown_operator_validation():
     Query({"foo": {"$exists": True}}).validate()
     Query({"foo": {"bar": "baz"}}).validate()
+    # a dict whose first key is not an operator is a literal value, as in MongoDB
+    Query({"foo": {"bar": "baz", "$qux": 1}}).validate()
+
+    with pytest.raises(TypeError, match=r"unknown operator: bar"):
+        Query({"foo": {"$gt": 1, "bar": "baz"}}).validate()
 
     with pytest.raises(TypeError, match=r"\$where"):
         Query({"$where": "this.foo"}).validate()
@@ -149,3 +154,6 @@ def test_mgqpy_unknown_operator_validation():
     # test() cannot evaluate $elemMatch with operators on array values
     with pytest.raises(TypeError, match=r"\$elemMatch"):
         Query({"foo": {"$elemMatch": {"$gt": 1}}}).validate()
+
+    with pytest.raises(TypeError, match=r"\$elemMatch"):
+        Query({"foo": {"$elemMatch": 1}}).validate()

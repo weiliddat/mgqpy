@@ -159,25 +159,24 @@ def _validate(query) -> bool:
         else:
             exp_or_ov = query[path]
             is_all_exp = _check_all_exp(exp_or_ov)
-            if not is_all_exp and isinstance(exp_or_ov, dict):
-                unknown = [
-                    key
-                    for key in exp_or_ov
-                    if isinstance(key, str)
-                    and key.startswith("$")
-                    and key not in cond_ops
-                ]
-                if unknown:
-                    raise TypeError(f"unknown operator: {unknown[0]}")
+            # Like MongoDB, a dict whose first key starts with $ is an operator
+            # expression; any other dict is a literal value to compare against
+            if not is_all_exp and isinstance(exp_or_ov, dict) and exp_or_ov:
+                first = next(iter(exp_or_ov))
+                if isinstance(first, str) and first.startswith("$"):
+                    unknown = next(k for k in exp_or_ov if k not in cond_ops)
+                    raise TypeError(f"unknown operator: {unknown}")
             if is_all_exp:
                 exp = exp_or_ov
                 if "$not" in exp and isinstance(exp["$not"], dict):
                     _validate({path: exp["$not"]})
-                if "$elemMatch" in exp and isinstance(exp["$elemMatch"], dict):
+                if "$elemMatch" in exp:
                     elem = exp["$elemMatch"]
+                    if not isinstance(elem, dict):
+                        raise TypeError("$elemMatch operator value must be a dict")
                     if _check_all_exp(elem):
                         raise TypeError(
-                            "$elemMatch on array values (e.g. {'$elemMatch': {'$gt': 1}}) is not supported"
+                            "$elemMatch with operators on values is not supported"
                         )
                     _validate(elem)
                 if "$all" in exp and _is_all_elem_match(exp["$all"]):
