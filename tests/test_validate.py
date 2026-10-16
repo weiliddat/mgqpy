@@ -140,3 +140,12 @@ def test_mgqpy_unknown_operator_validation():
 
     with pytest.raises(TypeError, match=r"\$type"):
         Query({"foo": {"$elemMatch": {"bar": {"$type": "string"}}}}).validate()
+
+    with pytest.raises(TypeError, match=r"\$type"):
+        Query(
+            {"foo": {"$all": [{"$elemMatch": {"bar": {"$type": "string"}}}]}}
+        ).validate()
+
+    # test() cannot evaluate $elemMatch with operators on array values
+    with pytest.raises(TypeError, match=r"\$elemMatch"):
+        Query({"foo": {"$elemMatch": {"$gt": 1}}}).validate()

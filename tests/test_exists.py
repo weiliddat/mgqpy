@@ -38,6 +38,17 @@ testcases = [
         ],
     ),
     (
+        "$exists non-boolean value",
+        {"foo": {"$exists": ""}},
+        [
+            {"foo": "bar"},
+            {},
+        ],
+        [
+            {"foo": "bar"},
+        ],
+    ),
+    (
         "$exists dict access",
         {"foo.bar": {"$exists": True}},
         [

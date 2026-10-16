@@ -24,7 +24,7 @@
 from typing import List
 
 from .operators.and_or_nor import _match_and, _match_or, _match_nor, _validate_query_ops
-from .operators.all import _match_all, _validate_all
+from .operators.all import _match_all, _validate_all, _is_all_elem_match
 from .operators.elem_match import _match_elem_match
 from .operators.eq_ne_not import _match_eq, _match_ne, _match_not
 from .operators.exists import _match_exists
@@ -175,7 +175,14 @@ def _validate(query) -> bool:
                     _validate({path: exp["$not"]})
                 if "$elemMatch" in exp and isinstance(exp["$elemMatch"], dict):
                     elem = exp["$elemMatch"]
-                    _validate({path: elem} if _check_all_exp(elem) else elem)
+                    if _check_all_exp(elem):
+                        raise TypeError(
+                            "$elemMatch on array values (e.g. {'$elemMatch': {'$gt': 1}}) is not supported"
+                        )
+                    _validate(elem)
+                if "$all" in exp and _is_all_elem_match(exp["$all"]):
+                    for elem_match in exp["$all"]:
+                        _validate({path: elem_match})
                 if "$in" in exp and not _validate_in_nin(exp["$in"]):
                     raise TypeError("$in operator value must be a list")
                 if "$nin" in exp and not _validate_in_nin(exp["$nin"]):

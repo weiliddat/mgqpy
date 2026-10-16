@@ -2,7 +2,9 @@ from typing import List
 
 
 def _match_exists(doc, path: List[str], ov) -> bool:
-    return _path_exists(doc, path) == bool(ov)
+    # MongoDB reads only false, null and numeric zero as false; "", [] and {} are true
+    want = not (ov is None or (isinstance(ov, (int, float)) and ov == 0))
+    return _path_exists(doc, path) == want
 
 
 def _path_exists(doc, path: List[str]) -> bool:
@@ -18,6 +20,6 @@ def _path_exists(doc, path: List[str]) -> bool:
     if isinstance(doc, list):
         if key.isdigit() and int(key) < len(doc) and _path_exists(doc[int(key)], rest):
             return True
-        return any([_path_exists(d, path) for d in doc if isinstance(d, dict)])
+        return any(_path_exists(d, path) for d in doc if isinstance(d, dict))
 
     return False
