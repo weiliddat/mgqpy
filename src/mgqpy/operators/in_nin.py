@@ -5,9 +5,6 @@ from typing import List
 
 
 def _match_in(doc, path: List[str], ov) -> bool:
-    if not _validate_in_nin(ov):
-        return False
-
     if len(path) == 0:
         if isinstance(doc, list):
             for d in doc:
@@ -43,11 +40,4 @@ def _match_in(doc, path: List[str], ov) -> bool:
 
 
 def _match_nin(doc, path: List[str], ov) -> bool:
-    if not _validate_in_nin(ov):
-        return False
-
     return not _match_in(doc, path, ov)
-
-
-def _validate_in_nin(ov):
-    return isinstance(ov, list)

@@ -5,9 +5,6 @@ from mgqpy.utils import is_array_index
 
 
 def _match_all(doc, path: List[str], ov) -> bool:
-    if not _validate_all(ov):
-        return False
-
     if len(ov) == 0:
         return False
 

@@ -1,5 +1,6 @@
 import re
 import sys
+from collections import OrderedDict
 from decimal import Decimal, InvalidOperation
 
 import pytest
@@ -58,6 +59,7 @@ def test_invalid_expressions_cannot_be_negated_into_matches(test_db, expression)
 @pytest.mark.parametrize("query", [
     None, [], "bad", {1: 2}, {"x": {1: 2}},
     {"x": {"$eq": {1: 2}}}, {"x": {"$in": [{1: 2}]}},
+    {"x": OrderedDict([(1, 2)])},
     {"x": {"$mod": [1j, 0]}},
     {"x": {"$regex": re.compile(b"a")}},
     {"x": re.compile(b"a", re.LOCALE)},
@@ -105,6 +107,15 @@ def test_query_owns_a_deep_snapshot():
     assert predicate.test({"x": {"nested": [2]}, "name": "abc"}) is True
     assert predicate.test({"x": 9, "name": "abc"}) is False
     assert not hasattr(predicate, "validate")
+
+
+@pytest.mark.parametrize("container", [dict, OrderedDict])
+def test_literal_containers_are_deep_copied(container):
+    value = container(nested=([2],))
+    predicate = Query({"x": {"$eq": value}})
+    value["nested"][0].append(3)
+    assert predicate.test({"x": container(nested=([2],))}) is True
+    assert predicate.test({"x": value}) is False
 
 
 def test_regex_preparation_preserves_aliased_literal_values(test_db):
