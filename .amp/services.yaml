@@ -1,4 +1,4 @@
 services:
   mongo:
-    command: mkdir -p .amp/mongo && exec mongod --dbpath .amp/mongo --bind_ip 127.0.0.1 --port "$PORT" --wiredTigerCacheSizeGB 0.25
+    command: ulimit -n 64000 && mkdir -p .amp/mongo && exec mongod --dbpath .amp/mongo --bind_ip 127.0.0.1 --port "$PORT" --wiredTigerCacheSizeGB 0.25
     port: 27017

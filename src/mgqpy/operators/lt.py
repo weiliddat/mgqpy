@@ -1,15 +1,19 @@
 import operator
 from itertools import zip_longest
-from numbers import Number
 from typing import List
 
-from mgqpy.utils import coerce
+from mgqpy.utils import coerce, in_same_type_bracket, is_array_index
 
 
 def _match_lt(doc, path: List[str], ov) -> bool:
     if len(path) == 0:
-        if isinstance(doc, list) and any([_match_lt(d, path, ov) for d in doc]):
-            return True
+        if type(doc) in (int, float) and type(ov) in (int, float):
+            return doc < ov
+
+        if isinstance(doc, list):
+            for d in doc:
+                if _match_lt(d, path, ov):
+                    return True
 
         if isinstance(doc, list) and isinstance(ov, list):
             if doc < ov:
@@ -34,13 +38,8 @@ def _match_lt(doc, path: List[str], ov) -> bool:
                         return True
             return False
 
-        try:
-            doc, ov = coerce(doc, ov)
-            return operator.lt(doc, ov)
-        except Exception:
-            pass
-
-        return False
+        doc, ov = coerce(doc, ov)
+        return in_same_type_bracket(doc, ov) and operator.lt(doc, ov)
 
     key = path[0]
     rest = path[1:]
@@ -48,12 +47,14 @@ def _match_lt(doc, path: List[str], ov) -> bool:
     if isinstance(doc, dict) and key in doc:
         return _match_lt(doc[key], rest, ov)
 
-    if isinstance(doc, list) and key.isdigit():
+    if isinstance(doc, list) and is_array_index(key):
         idx = int(key)
         if idx < len(doc):
             return _match_lt(doc[idx], rest, ov)
 
     if isinstance(doc, list):
-        return any([_match_lt(d, path, ov) for d in doc])
+        for d in doc:
+            if _match_lt(d, path, ov):
+                return True
 
     return False

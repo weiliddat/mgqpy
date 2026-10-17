@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from mgqpy import Query
@@ -212,10 +214,24 @@ testcases = [
 
 
 @pytest.mark.parametrize("name,query,input,expected", testcases)
-def test_mgqpy_eq(test_db, benchmark, name, query, input, expected):
+def test_mgqpy_eq(test_db, name, query, input, expected):
     mongo_expected = get_mongo_results(test_db, query, input)
     assert expected == mongo_expected, name
 
     q = Query(query)
-    actual = benchmark(get_filter_results, q.test, input)
+    actual = get_filter_results(q.test, input)
     assert actual == expected, name
+
+
+def test_explicit_regex_equality_is_literal(test_db):
+    pattern = re.compile("^a", re.I)
+    query = {"items.x": {"$eq": pattern}}
+    documents = [
+        {"case": "string", "items": [{"x": "abc"}]},
+        {"case": "literal", "items": [{"x": pattern}]},
+        {"case": "array", "items": [{"x": ["abc", pattern]}]},
+        {"case": "other-flags", "items": [{"x": re.compile("^a")}]},
+        {"case": "missing"},
+    ]
+    assert [d["case"] for d in get_mongo_results(test_db, query, documents)] == ["literal", "array"]
+    assert [d["case"] for d in get_filter_results(Query(query).test, documents)] == ["literal", "array"]

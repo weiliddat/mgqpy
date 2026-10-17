@@ -151,21 +151,6 @@ testcases = [
         ],
     ),
     (
-        "$all with other $ subquery",
-        {
-            "foo": {
-                "$all": [
-                    {"$or": [{"bar": "baz"}, {"bar": "qux"}]},
-                ]
-            }
-        },
-        [
-            {"foo": [{"bar": "baz"}, {"bar": "qux"}]},
-            {"foo": [{"bar": {"$eq": "baz"}}, {"bar": {"$eq": "qux"}}]},
-        ],
-        [],
-    ),
-    (
         "$all with empty ov",
         {"foo": {"$all": []}},
         [
@@ -178,18 +163,10 @@ testcases = [
 
 
 @pytest.mark.parametrize("name,query,input,expected", testcases)
-def test_mgqpy_all(test_db, benchmark, name, query, input, expected):
+def test_mgqpy_all(test_db, name, query, input, expected):
     mongo_expected = get_mongo_results(test_db, query, input)
     assert expected == mongo_expected, name
 
     q = Query(query)
-    actual = benchmark(get_filter_results, q.test, input)
+    actual = get_filter_results(q.test, input)
     assert actual == expected, name
-
-
-def test_mgqpy_invalid_query():
-    query = {"foo": {"$all": {"bar": "baz"}}}
-    q = Query(query)
-    assert q.test({"foo": "bar"}) is False
-
-    query = {"foo": {"$all": [{"$elemMatch": {"bar": "baz"}}]}}

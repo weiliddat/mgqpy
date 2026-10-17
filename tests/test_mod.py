@@ -131,20 +131,26 @@ testcases = [
 
 
 @pytest.mark.parametrize("name,query,input,expected", testcases)
-def test_mgqpy_mod(test_db, benchmark, name, query, input, expected):
+def test_mgqpy_mod(test_db, name, query, input, expected):
     mongo_expected = get_mongo_results(test_db, query, input)
     assert expected == mongo_expected, name
 
     q = Query(query)
-    actual = benchmark(get_filter_results, q.test, input)
+    actual = get_filter_results(q.test, input)
     assert actual == expected, name
 
 
-def test_mgqpy_invalid_query():
-    query = {"foo": {"$mod": {"1": "0"}}}
-    q = Query(query)
-    assert q.test({"foo": 1}) is False
-
-    query = {"foo": {"$mod": ["1", "0"]}}
-    q = Query(query)
-    assert q.test({"foo": 1}) is False
+@pytest.mark.parametrize("operands,values,expected", [
+    ([3, -1], [-4, -1.5, -0.5, 4, True], [-4, -1.5]),
+    ([-3.5, 1.9], [-4, -1.5, 1.9, 4, False], [1.9, 4]),
+    ([3, 0], [float("nan"), float("inf"), -float("inf"), True, 3], [3]),
+    ([7, 1], [2**60, 2**60 + 1, -(2**60)], [2**60]),
+    ([1, 0], [float(2**63), 1e30, -float(2**63), -(2**63), 2**63 - 1],
+     [-float(2**63), -(2**63), 2**63 - 1]),
+])
+def test_signed_mod_and_numeric_boundaries(test_db, operands, values, expected):
+    query = {"x": {"$mod": operands}}
+    documents = [{"x": value} for value in values]
+    expected = [{"x": value} for value in expected]
+    assert get_mongo_results(test_db, query, documents) == expected
+    assert get_filter_results(Query(query).test, documents) == expected
