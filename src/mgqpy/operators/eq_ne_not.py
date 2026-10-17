@@ -6,10 +6,15 @@ from mgqpy.utils import coerce, is_array_index
 import mgqpy
 
 
-def _match_eq(doc, path: List[str], ov, *, regex=True) -> bool:
+# Eager loops avoid comprehension closure cells on every scalar call (Python 3.10/3.11).
+def _match_eq(doc, path: List[str], ov, regex=True) -> bool:
     if len(path) == 0:
-        if isinstance(doc, list) and any([_match_eq(d, path, ov, regex=regex) for d in doc]):
-            return True
+        if isinstance(doc, list):
+            results = []
+            for d in doc:
+                results.append(_match_eq(d, path, ov, regex))
+            if any(results):
+                return True
 
         if regex and isinstance(ov, re.Pattern) and isinstance(doc, str):
             return bool(ov.search(doc))
@@ -21,15 +26,18 @@ def _match_eq(doc, path: List[str], ov, *, regex=True) -> bool:
     rest = path[1:]
 
     if isinstance(doc, dict) and key in doc:
-        return _match_eq(doc[key], rest, ov, regex=regex)
+        return _match_eq(doc[key], rest, ov, regex)
 
     if isinstance(doc, list) and is_array_index(key):
         idx = int(key)
         if idx < len(doc):
-            return _match_eq(doc[idx], rest, ov, regex=regex)
+            return _match_eq(doc[idx], rest, ov, regex)
 
     if isinstance(doc, list):
-        return any([_match_eq(d, path, ov, regex=regex) for d in doc])
+        results = []
+        for d in doc:
+            results.append(_match_eq(d, path, ov, regex))
+        return any(results)
 
     if ov is None:
         return True

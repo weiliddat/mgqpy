@@ -72,9 +72,7 @@ class InvalidQuery(ValueError):
 class Query:
     def __init__(self, query):
         try:
-            query = deepcopy(query)
-            _validate_keys(query)
-            self._query = _validate(query)
+            self._query = _validate(_copy_query(query))
         except (TypeError, ValueError, ArithmeticError, RecursionError) as error:
             raise InvalidQuery(str(error)) from error
 
@@ -82,7 +80,7 @@ class Query:
         if not isinstance(doc, dict):
             raise TypeError("document must be a dict")
         try:
-            return bool(_match_cond(self._query, doc))
+            return _match_cond(self._query, doc)
         except (TypeError, ValueError, ArithmeticError, RecursionError):
             # Interim policy until container comparisons and traversal are reworked:
             # an unevaluable document is a non-match, including under negation.
@@ -219,6 +217,26 @@ def _validate_expression(value):
     if "$size" in value and not _validate_size(value["$size"]):
         raise TypeError("$size requires a nonnegative integer")
     return value
+
+
+def _copy_query(value):
+    """Copy query containers while checking keys, sharing only immutable scalars."""
+    if type(value) in (str, int, float, bool, bytes, complex, type(None)):
+        return value
+    if type(value) is dict:
+        result = {}
+        for key, child in value.items():
+            if not isinstance(key, str):
+                raise TypeError("field keys must be strings")
+            result[key] = _copy_query(child)
+        return result
+    if type(value) is list:
+        return [_copy_query(child) for child in value]
+    if type(value) is tuple:
+        return tuple(_copy_query(child) for child in value)
+    # Preserve deepcopy behavior for native types and container subclasses.
+    _validate_keys(value)
+    return deepcopy(value)
 
 
 def _validate_keys(value):
