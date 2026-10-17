@@ -26,10 +26,23 @@ CASES = [
 ]
 
 
-@pytest.mark.parametrize("name,query,doc", CASES, ids=[case[0] for case in CASES])
-def test_match(benchmark, name, query, doc):
+MATCH_CASES = [(name, query, doc, True) for name, query, doc in CASES]
+for op, hit, miss in (("$gt", 73, 0), ("$gte", 73, 0), ("$lt", 71, 99), ("$lte", 71, 99)):
+    for direction, operand, cast in (("int-float", 72, float), ("float-int", 72.0, int)):
+        query = {"x": {op: operand}}
+        for shape, value, expected in (
+            ("scalar", cast(hit), True),
+            ("scalar-miss", cast(miss), False),
+            ("array-last", [cast(miss)] * 99 + [cast(hit)], True),
+            ("array-miss", [cast(miss)] * 100, False),
+        ):
+            MATCH_CASES.append((f"{op[1:]}-{direction}-{shape}", query, {"x": value}, expected))
+
+
+@pytest.mark.parametrize("name,query,doc,expected", MATCH_CASES, ids=[case[0] for case in MATCH_CASES])
+def test_match(benchmark, name, query, doc, expected):
     predicate = Query(query)
-    assert benchmark(predicate.test, doc) is True
+    assert benchmark(predicate.test, doc) is expected
 
 
 @pytest.mark.parametrize("name,query,doc", CASES, ids=[case[0] for case in CASES])

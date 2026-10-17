@@ -7,6 +7,9 @@ from mgqpy.utils import coerce, in_same_type_bracket, is_array_index
 
 def _match_lt(doc, path: List[str], ov) -> bool:
     if len(path) == 0:
+        if type(doc) in (int, float) and type(ov) in (int, float):
+            return doc < ov
+
         if isinstance(doc, list):
             for d in doc:
                 if _match_lt(d, path, ov):

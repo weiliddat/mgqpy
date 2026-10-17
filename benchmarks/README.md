@@ -9,15 +9,22 @@ uv run pytest benchmarks --benchmark-min-rounds=30 --benchmark-max-time=0.5 \
 ```
 
 `test_match` constructs the predicate outside the timed region and evaluates one
-matching document per invocation. `test_construct` times only `Query(query)`;
-its assertion evaluates the result outside the timed region. Regex construction
-uses Python's warm regex cache. Flat equality, a five-segment dict path, 100
-subdocuments, a 1,000-member `$in`, explicit regex, and combined `$and`/`$or` each
-have both measurements. Additional cases cover single-/two-digit indexed paths,
+document per invocation, checking both matches and non-matches. `test_construct`
+times only `Query(query)`; its assertion evaluates the result outside the timed
+region. Regex construction uses Python's warm regex cache. Flat equality, a
+five-segment dict path, 100 subdocuments, a 1,000-member `$in`, explicit regex,
+and combined `$and`/`$or` each have both measurements. Additional cases cover single-/two-digit indexed paths,
 scalar/deep `$size`, and scalar/deep/100-value-array `$mod`, also with construction
 timings. Array `$mod` has both an early match and a last-element match to measure
 short-circuiting separately from full-scan cost. Dataset definitions live in
 `test_benchmarks.py`.
+
+Mixed-numeric range matching adds 32 matching-only cases: `$gt`, `$gte`, `$lt`,
+and `$lte`, each with an integer query operand/float document values and the
+reverse. Each has a scalar match, scalar miss, 100-value array with only its last
+element matching, and 100-value all-miss array. All use threshold 72; the array
+prefix is 0 for greater-than queries and 99 for less-than queries. These cases
+do not add redundant construction timings.
 
 ## 0.9.0 versus the initial v1 base
 
@@ -241,10 +248,70 @@ Ratios of **final early-return loops / 0.9.0**, lower is faster:
 | Array `$mod`, early match | 0.028× | 0.023× | 0.026× | 0.025× |
 | Array `$mod`, last match | 0.641× | 0.556× | 0.621× | 0.670× |
 
-No measured matching regression against 0.9.0 on any interpreter. The Python
+No measured matching regression against 0.9.0 in these 14 workloads on any
+interpreter. They did not cover the mixed-numeric ranges measured below. The Python
 3.10 regex baseline still fails with `re.NOFLAG`; the final source matches at
 1.537 µs. These are shared-orb medians, not universal guarantees or CI thresholds.
 The final opt-in suite passes all 28 cases. A short Python 3.11 run with the same
 pytest-benchmark flags as above measured construction at 206.312 µs for large
 `$in`, 4.481 µs for `$mod`, 2.523 µs for `$size`, and 3.318 µs for regex.
 Construction and the snapshot copier are unchanged by the evaluation-policy fix.
+
+## Mixed-numeric range matching
+
+The type-bracket guard in
+[`418e24f`](https://github.com/weiliddat/mgqpy/commit/418e24f5f5ed7b3b505d77b6ef44d2b9bf0c2012)
+uses `numbers.Number` ABC checks for mixed built-in `int`/`float` pairs. Calling
+that guard and `coerce()` on every array element regressed against 0.9.0. Each
+range matcher now compares exact built-in numeric pairs directly, before the
+generic leaf handling. It does not cast either value, preserving integer precision.
+Bool, numeric subclasses, Decimal, and other types retain the generic fallback,
+including coercion and original exception propagation. Traversal is unchanged.
+
+Measured on the same orb on 2026-10-17 with Python 3.10.21, 3.11.6, 3.12.14,
+and 3.13.15, run serially. Independent imports loaded 0.9.0, the reviewed commit,
+and the fixed source. The comparison included all 46 committed matching cases,
+eight same-type numeric scalar controls, and a deep mixed-numeric path control.
+Each predicate was constructed outside timing, checked against its expected
+boolean result, and warmed with 200 calls. `timeit` disabled GC. All three
+variants used the same iteration count per workload, calibrated from 200 calls
+of the slowest variant to target 20 ms per block, bounded to 100–100,000 iterations.
+The 24 interleaved blocks shuffled variant order with `random.Random(4361)`.
+Values below are medians in microseconds per `test()`, including identical lambda
+overhead. These remain shared-orb observations, not universal guarantees.
+
+Exact reproducer: `Query({"x": {"$gt": 72}})` against
+`{"x": [0.0] * 99 + [73.0]}` (last match) and `{"x": [0.0] * 100}` (all miss):
+
+| Python | Last: 0.9.0 | Last: reviewed | Last: fixed | Miss: 0.9.0 | Miss: reviewed | Miss: fixed |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 3.10 | 95.943 | 152.871 | 20.238 | 96.718 | 152.205 | 22.250 |
+| 3.11 | 75.978 | 114.669 | 16.391 | 77.297 | 117.462 | 17.590 |
+| 3.12 | 66.114 | 105.737 | 13.209 | 67.167 | 107.287 | 14.449 |
+| 3.13 | 72.858 | 112.066 | 12.669 | 74.657 | 113.489 | 14.107 |
+
+The same query against scalar `{"x": 73.0}`:
+
+| Python | 0.9.0 | Reviewed | Fixed |
+| --- | ---: | ---: | ---: |
+| 3.10 | 2.652 | 3.057 | 1.292 |
+| 3.11 | 2.031 | 2.147 | 0.998 |
+| 3.12 | 1.710 | 1.939 | 0.889 |
+| 3.13 | 1.828 | 1.940 | 0.812 |
+
+Ratios of **fixed / 0.9.0** across all four range operators and both numeric
+directions; each cell gives the minimum–maximum of eight workloads:
+
+| Workload | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 |
+| --- | ---: | ---: | ---: | ---: |
+| Scalar match | 0.480–0.500× | 0.491–0.503× | 0.508–0.524× | 0.443–0.459× |
+| Scalar miss | 0.407–0.436× | 0.409–0.448× | 0.423–0.469× | 0.371–0.394× |
+| Array last match | 0.211–0.218× | 0.216–0.227× | 0.196–0.214× | 0.173–0.184× |
+| Array all miss | 0.226–0.230× | 0.228–0.241× | 0.213–0.223× | 0.187–0.196× |
+
+No measured regression against 0.9.0 in any of the 55 matching cases on any
+interpreter where the baseline runs. The 14 original workloads were also
+rechecked; their worst fixed/baseline ratios were 0.851×, 0.907×, 0.960×, and
+0.969× on Python 3.10, 3.11, 3.12, and 3.13 respectively. 0.9.0's explicit regex
+still fails on Python 3.10 (`re.NOFLAG`); that single baseline is not timed.
+The expanded opt-in suite passes all 60 matching/construction cases.
