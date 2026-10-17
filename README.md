@@ -95,6 +95,7 @@ except InvalidQuery as error:
 - A reached evaluation error raises its **original exception**, without wrapping
   it or turning it into a non-match, including under `$not`, `$nor`, and `$or`.
 - Numeric array paths try the index before numeric-field alternatives; candidate order is not MongoDB's and skipped candidates are not checked.
+- Comparison-method call order on non-BSON custom types is not guaranteed; reached exceptions still propagate.
 - Regex patterns must come from **trusted sources**; see the trust boundary below.
 
 Ordinary scalar type mismatches (such as a string against a numeric range operand)

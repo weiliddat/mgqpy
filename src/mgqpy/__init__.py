@@ -60,6 +60,8 @@ class Query:
         try:
             self._query = _copy_query(query)
             self._match = _compile_query(self._query)
+        except InvalidQuery:
+            raise
         except (TypeError, ValueError, ArithmeticError, RecursionError) as error:
             raise InvalidQuery(str(error)) from error
 
@@ -75,7 +77,7 @@ class Query:
 
 def _compile_query(query, location="query"):
     if not isinstance(query, dict):
-        raise TypeError(f"{location}: query must be a dict")
+        raise InvalidQuery(f"{location}: query must be a dict")
     predicates = []
     for path, value in query.items():
         here = f"{location}.{path}"
@@ -91,8 +93,10 @@ def _compile_query(query, location="query"):
             else:
                 value = _validate_expression(value, here)
                 predicates.append(_compile_expression(compile_path(path), value))
+        except InvalidQuery:
+            raise
         except (TypeError, ValueError, ArithmeticError, RecursionError) as error:
-            raise ValueError(f"{here}: {error}") from error
+            raise InvalidQuery(f"{here}: {error}") from error
     return conjunction(tuple(predicates))
 
 

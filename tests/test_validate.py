@@ -128,7 +128,7 @@ def test_predicate_can_be_submitted_to_a_process_pool():
 def test_invalid_nested_query_names_its_location(query, location):
     with pytest.raises(InvalidQuery) as caught:
         Query(query)
-    assert f"{location}: unknown operator: $typo" in str(caught.value)
+    assert str(caught.value) == f"{location}: unknown operator: $typo"
 
 
 def test_query_owns_a_deep_snapshot():
