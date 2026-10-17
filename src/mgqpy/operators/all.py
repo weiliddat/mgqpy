@@ -1,55 +1,18 @@
-from typing import List
-
-import mgqpy
-from mgqpy.utils import is_array_index
-
-
-def _match_all(doc, path: List[str], ov) -> bool:
-    if len(ov) == 0:
+def _match_all(value, operands) -> bool:
+    if not operands or not isinstance(value, list):
         return False
-
-    if _is_all_elem_match(ov):
-        elem_match_query = {"$and": [{".".join(path): o} for o in ov]}
-        return mgqpy._match_cond(elem_match_query, doc)
-
-    if len(path) == 0:
-        if not isinstance(doc, list):
+    for operand in operands:
+        if not (operand in value or operand == value):
             return False
-
-        for o in ov:
-            if not (o in doc or o == doc):
-                return False
-        return True
-
-    key = path[0]
-    rest = path[1:]
-
-    if isinstance(doc, dict) and key in doc:
-        return _match_all(doc[key], rest, ov)
-
-    if isinstance(doc, list) and is_array_index(key):
-        idx = int(key)
-        if idx < len(doc):
-            return _match_all(doc[idx], rest, ov)
-
-    if isinstance(doc, list):
-        for d in doc:
-            if _match_all(d, path, ov):
-                return True
-
-    return False
+    return True
 
 
-# $all can be a list of values, or only $elemMatch if $ expression is in a list of dicts
-def _validate_all(ov) -> bool:
-    is_list = isinstance(ov, list)
-    if is_list:
-        if len(ov) == 0:
-            return True
-        if isinstance(ov[0], dict) and any(k.startswith("$") for k in ov[0].keys()):
-            return _is_all_elem_match(ov)
-    return is_list
+def _validate_all(operands) -> bool:
+    if operands and isinstance(operands[0], dict):
+        if any(key.startswith("$") for key in operands[0]):
+            return _is_all_elem_match(operands)
+    return True
 
 
-def _is_all_elem_match(ov) -> bool:
-    return all(isinstance(o, dict) and "$elemMatch" in o for o in ov)
+def _is_all_elem_match(operands) -> bool:
+    return all(isinstance(operand, dict) and "$elemMatch" in operand for operand in operands)

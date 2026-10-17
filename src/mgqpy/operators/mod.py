@@ -1,52 +1,26 @@
 import math
-from typing import List
 
-from mgqpy.utils import is_array_index, is_finite_number
-
-
-def _match_mod(doc, path: List[str], ov) -> bool:
-    if len(path) == 0:
-        if isinstance(doc, list):
-            for d in doc:
-                if _match_mod(d, path, ov):
-                    return True
-
-        if not is_finite_number(doc):
-            return False
-
-        divisor, expected_remainder = ov
-        dividend = math.trunc(doc)
-        if not -(2**63) <= dividend < 2**63:
-            return False
-        remainder = abs(dividend) % divisor
-        if dividend < 0:
-            remainder = -remainder
-        return remainder == expected_remainder
-
-    key = path[0]
-    rest = path[1:]
-
-    if isinstance(doc, dict) and key in doc:
-        return _match_mod(doc[key], rest, ov)
-
-    if isinstance(doc, list) and is_array_index(key):
-        idx = int(key)
-        if idx < len(doc):
-            return _match_mod(doc[idx], rest, ov)
-
-    if isinstance(doc, list):
-        for d in doc:
-            if _match_mod(d, path, ov):
-                return True
-
-    return False
+from mgqpy.utils import is_finite_number
 
 
-def _validate_mod(ov):
+def _match_mod(value, operand) -> bool:
+    if not is_finite_number(value):
+        return False
+    divisor, expected_remainder = operand
+    dividend = math.trunc(value)
+    if not -(2**63) <= dividend < 2**63:
+        return False
+    remainder = abs(dividend) % divisor
+    if dividend < 0:
+        remainder = -remainder
+    return remainder == expected_remainder
+
+
+def _validate_mod(value):
     return (
-        isinstance(ov, list)
-        and len(ov) == 2
-        and all(is_finite_number(value) for value in ov)
-        and all(-(2**63) <= math.trunc(value) < 2**63 for value in ov)
-        and math.trunc(ov[0]) != 0
+        isinstance(value, list)
+        and len(value) == 2
+        and all(is_finite_number(item) for item in value)
+        and all(-(2**63) <= math.trunc(item) < 2**63 for item in value)
+        and math.trunc(value[0]) != 0
     )

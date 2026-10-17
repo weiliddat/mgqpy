@@ -1,31 +1,28 @@
-import mgqpy
+"""Compose already-compiled document predicates."""
 
 
-def _match_and(doc, path: str, ov) -> bool:
-    for cond in ov:
-        if not mgqpy._match_cond(cond, doc):
-            return False
-    return True
+def conjunction(predicates):
+    if len(predicates) == 1:
+        return predicates[0]
+
+    def match(doc):
+        for predicate in predicates:
+            if not predicate(doc):
+                return False
+        return True
+    return match
 
 
-def _match_or(doc, path: str, ov) -> bool:
-    for cond in ov:
-        if mgqpy._match_cond(cond, doc):
-            return True
-    return False
+def disjunction(predicates):
+    def match(doc):
+        for predicate in predicates:
+            if predicate(doc):
+                return True
+        return False
+    return match
 
 
-def _match_nor(doc, path: str, ov) -> bool:
-    for cond in ov:
-        if mgqpy._match_cond(cond, doc):
-            return False
-    return True
-
-
-def _validate_query_ops(ov) -> bool:
-    """
-    Validate query op is given a list (shallow).
-    Recursion is done by _validate.
-    """
-
-    return isinstance(ov, list)
+def negate(predicate):
+    def match(doc):
+        return not predicate(doc)
+    return match

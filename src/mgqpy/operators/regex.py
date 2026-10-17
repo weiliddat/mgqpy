@@ -1,7 +1,5 @@
 import re
-from typing import List, NamedTuple
-
-from mgqpy.utils import is_array_index
+from typing import NamedTuple
 
 
 class _Regex(NamedTuple):
@@ -35,32 +33,5 @@ def _compile_regex(pattern, options=""):
         raise ValueError(f"unsupported or malformed regex: {error}") from error
 
 
-def _match_regex(doc, path: List[str], ov) -> bool:
-    if len(path) == 0:
-        if isinstance(doc, list):
-            for d in doc:
-                if _match_regex(d, path, ov):
-                    return True
-
-        if not isinstance(doc, str):
-            return False
-
-        return bool(ov.matcher.search(doc))
-
-    key = path[0]
-    rest = path[1:]
-
-    if isinstance(doc, dict) and key in doc:
-        return _match_regex(doc[key], rest, ov)
-
-    if isinstance(doc, list) and is_array_index(key):
-        idx = int(key)
-        if idx < len(doc):
-            return _match_regex(doc[idx], rest, ov)
-
-    if isinstance(doc, list):
-        for d in doc:
-            if _match_regex(d, path, ov):
-                return True
-
-    return False
+def _match_regex(value, operand) -> bool:
+    return isinstance(value, str) and operand.matcher.search(value)
