@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - v1-base
     paths:
       - '**.py'
       - pyproject.toml
