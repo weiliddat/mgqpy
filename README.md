@@ -5,7 +5,9 @@
 
 [MongoDB query](https://www.mongodb.com/docs/manual/reference/operator/query/) as a predicate function
 
-This aims to be consistent with how MongoDB's matches documents. This includes traversal across nested dicts and lists, None and field-presence/absence handling.
+Match Python dicts and lists with MongoDB-style queries. Python 3.10+, no runtime
+dependencies. The supported operators are checked against real MongoDB 7 and 8;
+Python-native conversions and other known differences are documented below.
 
 ## Installation
 
@@ -99,36 +101,30 @@ except InvalidQuery as error:
 - Regex patterns must come from **trusted sources**; see the trust boundary below.
 
 Ordinary scalar type mismatches (such as a string against a numeric range operand)
-remain non-matches. Container comparisons and Python-native values can still
-fail. These examples reproduce exceptions callers can encounter; they are not
-an exhaustive list:
+remain non-matches. Python-native values and custom classes can still fail.
+For example, Python cannot order an aware datetime against a naive datetime:
 
 ```python
+from datetime import datetime, timezone
 from mgqpy import Query
 
-# TypeError: deferred container comparison tries to compare "z" > 1.
-Query({"x": {"$gt": {"a": 1}}}).test({"x": {"a": "z"}})
+predicate = Query({"x": {"$gt": datetime(2024, 8, 1)}})
+predicate.test({"x": datetime(2024, 8, 2, tzinfo=timezone.utc)})  # TypeError
 
 # TypeError: the top-level document must be a dict.
 Query({}).test([])
 ```
 
-```python
-from decimal import Decimal
-from mgqpy import Query
-
-# decimal.InvalidOperation: ordering Decimal NaN, with the default decimal traps.
-Query({"x": {"$gt": 0}}).test({"x": Decimal("NaN")})
-```
-
 Short-circuiting can avoid a failing comparison, but does not validate a document:
 
 ```python
+from datetime import datetime, timezone
 from mgqpy import Query
 
-query = Query({"$or": [{"ok": True}, {"x": {"$gt": {"a": 1}}}]})
-assert query.test({"ok": True, "x": {"a": "z"}}) is True
-query.test({"ok": False, "x": {"a": "z"}})  # TypeError: comparison is reached.
+query = Query({"$or": [{"ok": True}, {"x": {"$gt": datetime(2024, 8, 1)}}]})
+value = datetime(2024, 8, 2, tzinfo=timezone.utc)
+assert query.test({"ok": True, "x": value}) is True
+query.test({"ok": False, "x": value})  # TypeError: comparison is reached.
 ```
 
 ## Regex subset and trust boundary
@@ -161,14 +157,7 @@ cost. Python `re` has no matching timeout; catastrophic backtracking can block t
 calling thread, especially with long or adversarial document strings. Do not pass
 untrusted patterns directly to mgqpy; input limits alone do not guarantee safety.
 
-## Compatibility limits in this v1 base
-
-Array indices must be canonical ASCII numbers (`0`, `1`, `2`, …). `00`, `²`, and
-other noncanonical segments remain ordinary field names, not array indices.
-`$mod` truncates numeric operands and document values toward zero and gives the
-remainder the dividend's sign. Like MongoDB, it requires signed 64-bit-convertible
-operands; booleans, non-finite values, and out-of-range document numbers do not match.
-`$size` requires a finite integral number in `0..2147483647` (including `2.0`).
+## Paths and array matching
 
 Paths are compiled once. Dict fields are followed directly; intermediate arrays
 search immediate subdocuments, not nested arrays or scalar elements. A missing
@@ -178,14 +167,88 @@ immediate elements and the whole array; an explicit terminal index offers only
 the selected value. Numeric segments also search literal fields in immediate
 subdocuments, so `{"x.0": 1}` matches `{"x": [{"0": 1}]}`.
 
+Array indices must be canonical ASCII numbers (`0`, `1`, `2`, …). `00`, `²`, and
+other noncanonical segments remain ordinary field names, not array indices.
+`$exists` uses the same path rules and tests presence, including null and empty
+arrays. Negation means no candidate matches, not that some candidate fails.
+
+Conditions on the same path can match different elements. `$all` requires each
+operand to match independently, even across different subdocuments reached by a
+path. It uses the same equality and regex rules as other matching; a single
+requirement can also match a scalar (`{"x": {"$all": [1]}}` matches `{"x": 1}`).
+Empty `$all` never matches. Use document-form `$elemMatch` when several conditions
+must hold on the **same element**. `$size` tests the whole leaf array, without
+adding the sizes of different candidates.
+
+## Value comparison
+
+- Booleans are separate from numbers: `True` does not equal `1`. Integers and
+  floats compare numerically without casting large integers to float.
+- Embedded dict equality includes **key order**, recursively. The first key
+  classifies an expression: `{"a": 1, "$eq": 2}` is a literal document, including
+  inside `$all`; an expression starts with a `$` key.
+- Ranges compare scalar values in the same BSON type bracket. Arrays compare
+  lexicographically. Embedded documents compare each entry's **value type, then
+  key, then value**, in insertion order; an equal prefix sorts before its extension.
+  Inside these containers, unlike scalar query ranges, different value types
+  follow BSON order: null, number, string, document, array, binary, bool, date,
+  regex (for the types represented here).
+- NaN equals NaN, including inside arrays and documents. Direct `$gt`/`$lt` with
+  NaN never match; `$gte`/`$lte` match only when both values are NaN. **Inside
+  containers**, NaN sorts below all other numbers, including negative infinity.
+
+These rules are shared by equality, membership, ranges, `$all`, and their
+negations. They replace 0.9.0's Python bool/number equality, order-insensitive
+dict equality, and container range errors.
+
+## Python-native conversions
+
+Conversions happen at each **scalar pair**, in either direction, including
+inside dicts and lists and in every operator that uses value equality or ranges:
+
+| Paired values | Rule |
+| --- | --- |
+| `date` or `datetime` and a string | Parse using the paired type's `fromisoformat` (formats depend on Python version). A date-only string becomes midnight when paired with a datetime. |
+| Aware `datetime` and a naive ISO string | The string inherits **that datetime's timezone**, never the host timezone. An explicit offset is preserved. |
+| `Decimal` and int, float or string | Convert the other value with `Decimal(str(value))`. Bool is excluded. Decimal NaNs follow the NaN rules above, including signaling NaNs. |
+| `UUID` and a string | Parse the string as a UUID; compact and hyphenated spellings work. |
+
+Invalid conversion leaves the original types, so a scalar type mismatch does
+not match. Strings paired with strings stay strings. This is pairwise conversion,
+not global normalization: two differently formatted strings may each equal a
+native value without equaling each other. Membership therefore checks operands
+in order rather than using a hash set or sorted lookup.
+
+```python
+from datetime import date
+from decimal import Decimal
+from mgqpy import Query
+
+predicate = Query({"x": {"$all": [{"day": "2024-08-01", "cost": ["3.14"]}]}})
+assert predicate.test({"x": [{"day": date(2024, 8, 1), "cost": [Decimal("3.14")]}]})
+```
+
+## Known differences and limits
+
+MongoDB does not perform these native/string conversions. `Decimal("0.1")`
+equals `0.1` here; BSON Decimal128 `0.1` sorts below the binary float in MongoDB.
+Python dates/datetimes retain their precision and Python comparison semantics:
+there is no BSON millisecond truncation or automatic naive/aware datetime
+alignment. Only an ISO string paired with an aware datetime inherits its zone.
+
+This is not a BSON implementation: driver-specific types such as ObjectId,
+Timestamp, MinKey/MaxKey, Decimal128 and Binary subtypes are not emulated.
+Use ordinary Python values; tuples, custom classes and other non-BSON values
+retain Python fallback behavior, not a MongoDB compatibility guarantee.
+There is no collation support. The regex subset and its trust boundary are
+described above. Numeric-path candidate order also differs from MongoDB, as
+noted in the evaluation contract.
 Trailing-empty path segments (such as `x.`) can differ from MongoDB 7/8.
 
-Value comparison otherwise retains the 0.9.0 behaviour. Known differences remain
-for BSON container ordering, bool/number equality, embedded-document key order,
-NaN equality, `$all`, and the scope of date/Decimal/UUID conversions.
-These are not MongoDB-conformance guarantees.
-In particular, valid container range queries can raise `TypeError` instead of
-following MongoDB's BSON ordering; see the evaluation-error examples above.
+`$mod` truncates numeric operands and document values toward zero and gives the
+remainder the dividend's sign. Like MongoDB, it requires signed 64-bit-convertible
+operands; booleans, non-finite values, and out-of-range document numbers do not match.
+`$size` requires a finite integral number in `0..2147483647` (including `2.0`).
 
 ## Supported operators
 

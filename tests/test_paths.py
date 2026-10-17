@@ -2,7 +2,7 @@ import pytest
 
 from mgqpy import Query
 
-from .helpers import get_filter_results, get_mongo_results
+from .helpers import assert_matches, get_filter_results, get_mongo_results
 
 
 @pytest.mark.parametrize("expression,value", [
@@ -54,6 +54,20 @@ def test_traversal_candidates(test_db, query, documents, hits):
     expected = [documents[i] for i in hits]
     assert get_mongo_results(test_db, query, documents) == expected
     assert get_filter_results(Query(query).test, documents) == expected
+
+
+@pytest.mark.parametrize("path,documents,hits", [
+    ("x", [{"x": None}, {"x": []}, {"x": {}}, {"x": 0}, {}], [0, 1, 2, 3]),
+    ("x.y", [{"x": {"y": None}}, {"x": 1}, {"x": None}, {},
+             {"x": [{}, {"y": None}]}, {"x": [[{"y": 1}]]}, {"x": []}], [0, 4]),
+    ("x.1", [{"x": [0, 1]}, {"x": [0]}, {"x": {"1": 1}},
+             {"x": [{"1": 1}]}], [0, 2, 3]),
+])
+@pytest.mark.parametrize("operand", [True, False, "", None, 0, 1])
+def test_exists_uses_the_same_paths(test_db, path, documents, hits, operand):
+    if operand is False or operand is None or operand == 0:
+        hits = [i for i in range(len(documents)) if i not in hits]
+    assert_matches(test_db, {path: {"$exists": operand}}, documents, hits)
 
 
 def test_index_first_short_circuits_and_propagates_reached_errors():

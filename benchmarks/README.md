@@ -373,3 +373,51 @@ unchanged. Both controls are faster than either baseline on all four interpreter
 Construction remains separately measured by `test_construct`; compilation
 intentionally moves work out of repeated matching. Correctness and installed-
 wheel checks run separately from these CPU-only measurements.
+
+## Shared value comparison
+
+The value branch uses the same 24-block interleaved method, independent source
+imports and four serial interpreters described above. Its shared equality and
+BSON comparison include pairwise scalar conversion within containers. The small
+direct numeric range entries avoid a dynamic operator call for each array value.
+
+Worst ratio across the **same 55 pre-existing matching workloads and controls**:
+
+| Python | Values / 0.9.0 | Values / v1-base |
+| --- | ---: | ---: |
+| 3.10.21 | 0.533× | 0.947× |
+| 3.11.6 | 0.487× | 0.874× |
+| 3.12.14 | 0.525× | 0.876× |
+| 3.13.15 | 0.521× | 0.893× |
+
+All comparable medians remain faster; 0.9.0's Python 3.10 explicit regex cannot
+run. Python 3.11 medians are 0.601 µs (flat), 1.026 µs (deep), 32.023 µs
+(subdocuments), 199.609 µs (large `$in`), 0.685 µs (regex), and 1.783 µs
+(logical composition). These observations are not universal guarantees.
+
+The suite now has 120 cases. Added workloads cover ordered-document equality,
+array/document ranges, `$all`, bool/number separation, NaN equality and direct/
+container ranges, scalar date/Decimal/UUID pairs, and early/last/missing string,
+array, document and native-container matches. Construction is timed separately.
+
+New coverage also exposes costs absent from the original gate. Python 3.11
+matching medians, in microseconds:
+
+| Workload | v1-base | Values |
+| --- | ---: | ---: |
+| Ordered document equality | 1.475 | 2.430 |
+| Array range | 4.252 | 3.699 |
+| Document range | 1.584 | 2.018 |
+| `$all`, 100 numeric values | 3.525 | 30.412 |
+| Document equality, last of 100 | 73.435 | 171.180 |
+| Date/string equality | 1.238 | 1.348 |
+| Decimal/string range | 2.349 | 1.911 |
+| UUID/string equality | 2.549 | 2.677 |
+
+Recursive equality replaces Python's C-level container equality/membership so
+it can distinguish bools, retain document key order, equate NaNs and convert
+native scalar pairs. `$all` applies that equality independently to each operand
+across path candidates. The added work is real; the original-workload gate does
+not imply a speedup for these cases. Native-container conversion has no correct
+old-version timing: both baselines return the wrong result, so they are excluded
+rather than reported as performance improvements.
