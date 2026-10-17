@@ -8,9 +8,26 @@ _SIMPLE = {int, float, str}
 
 
 def _matches(group, match, operand):
-    value, expand, simple = group
-    if simple:
-        return operand in value
+    value, expand, checked = group
+    if checked is not None:
+        length = len(value)
+        if checked == length:
+            return operand in value
+        if checked and operand in value[:checked]:
+            return True
+        # Certify only bounded chunks, not an unread tail. Later requirements
+        # reuse the certified prefix; other values still use shared equality.
+        while checked < length:
+            chunk = value if length <= 128 else value[checked:checked + 32]
+            if not _SIMPLE.issuperset(map(type, chunk)):
+                group[2] = None
+                break
+            checked += len(chunk)
+            group[2] = checked
+            if operand in chunk:
+                return True
+        else:
+            return False
     if expand and match is _match_eq:
         for child in value:
             if match(child, operand):
@@ -25,16 +42,8 @@ def compile_all(parts, operands, match):
 
     def visit(value, state, expand=False):
         current, seen = state
-        fast = (simple and expand and type(value) is list
-                and _SIMPLE.issuperset(map(type, value)))
-        if fast and not seen:
-            for current, operand in enumerate(operands):
-                if operand not in value:
-                    state[0] = current
-                    seen.append((value, expand, fast))
-                    return False
-            return True
-        group = value, expand, fast
+        checked = 0 if simple and expand and type(value) is list else None
+        group = [value, expand, checked]
         seen.append(group)
         if not _matches(group, match, operands[current]):
             return False

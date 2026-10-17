@@ -59,6 +59,8 @@ def test_equality_consumers_share_recursive_conversion(native, text):
                                   ({"$not": {"$eq": literal}}, False)):
         assert Query({"x": expression}).test(doc) is expected
     assert Query({"x": {"$elemMatch": {"a": [text]}}}).test({"x": [{"a": [native]}]}) is True
+    # A scalar-only prefix must not disable conversion in a later array value.
+    assert Query({"x": {"$all": [text, "last"]}}).test({"x": ["other"] * 160 + [native, "last"]}) is True
 
 
 @pytest.mark.parametrize("value,operand,expected", [

@@ -27,7 +27,7 @@ from numbers import Number
 import re
 from typing import Any
 
-from .comparison import _match_gt, _match_gte, _match_lt, _match_lte
+from .comparison import equal as _equal, _match_gt, _match_gte, _match_lt, _match_lte
 from .operators.all import compile_all
 from .operators.and_or_nor import conjunction, disjunction, negate
 from .operators.elem_match import _match_elem_match
@@ -35,7 +35,7 @@ from .operators.eq_ne_not import _match_eq
 from .operators.exists import _match_exists
 from .operators.in_nin import _match_in
 from .operators.mod import _match_mod, _validate_mod
-from .operators.regex import _match_regex, _compile_regex
+from .operators.regex import _Regex, _match_regex, _compile_regex
 from .operators.size import _match_size, _validate_size
 from .path import compile_path, walk
 
@@ -105,7 +105,7 @@ def _field(parts, match, operand, expand_leaf=True):
 
 # Preserve the established operator evaluation order, independent of key order.
 _value_ops = {
-    "$eq": _match_eq, "$ne": _match_eq,
+    "$eq": _equal, "$ne": _equal,
     "$gt": _match_gt, "$gte": _match_gte, "$lt": _match_lt, "$lte": _match_lte,
     "$in": _match_in, "$nin": _match_in, "$not": None,
     "$regex": _match_regex, "$mod": _match_mod, "$all": None,
@@ -115,7 +115,7 @@ _value_ops = {
 
 def _compile_expression(parts, value):
     if not _is_expression(value):
-        return _field(parts, _match_eq, value)
+        return _field(parts, _match_eq if isinstance(value, _Regex) else _equal, value)
     predicates = []
     for op, match in _value_ops.items():
         if op not in value:

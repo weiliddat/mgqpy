@@ -99,6 +99,34 @@ for name, first, second, miss in (("number", 72, 73, 0), ("string", "t72", "t73"
             values[position:position + 2] = [first, second]
         MATCH_CASES.append((f"all-{name}-{position}", {"x": {"$all": [first, second]}},
                             {"x": values}, position is not None))
+    for length in (10_000, 100_000):
+        MATCH_CASES.append((f"all-{name}-prefix-{length}", {"x": {"$all": [first, second]}},
+                            {"x": [first, second] + [miss] * (length - 2)}, True))
+    MATCH_CASES.append((f"all-{name}-shifted-prefix", {"x": {"$all": [second, first]}},
+                        {"x": [miss] * 17 + [first, second] + [miss] * 9981}, True))
+
+for op, number, other in (("$gt", 2, 0), ("$gte", 1, 0), ("$lt", 0, 2), ("$lte", 1, 2)):
+    for name, operand, hit, miss in (
+        ("document", {"a": 1}, {"a": number}, {"a": other}),
+        ("binary", b"b", bytes([97 + number]), bytes([97 + other])),
+    ):
+        for position in (99, None):
+            values = [miss] * 100
+            if position is not None:
+                values[position] = hit
+            MATCH_CASES.append((f"range-{name}-{op[1:]}-{position}", {"x": {op: operand}},
+                                {"x": values}, position is not None))
+
+for name, operand, hit, miss in (
+    ("date", "2024-08-01", date(2024, 8, 1), date(2024, 7, 31)),
+    ("uuid", "0123456789abcdef0123456789abcdef",
+     UUID("0123456789abcdef0123456789abcdef"), UUID(int=0)),
+):
+    for position in (99, None):
+        values = [miss] * 100
+        if position is not None:
+            values[position] = hit
+        MATCH_CASES.append((f"value-{name}-{position}", {"x": operand}, {"x": values}, position is not None))
 
 MATCH_CASES.extend([
     ("bool-not-number", {"x": 1}, {"x": True}, False),

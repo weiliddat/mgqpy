@@ -244,6 +244,7 @@ Use ordinary Python values; tuples, custom classes and other non-BSON values
 retain Python fallback behavior, not a MongoDB compatibility guarantee.
 When either scalar has no supported BSON type, equality and ranges use Python
 comparisons, including comparisons between custom base and subclass instances.
+Non-BSON partial orders (such as disjoint sets) can compare as ties inside containers.
 There is no collation support. The regex subset and its trust boundary are
 described above. Numeric-path candidate order also differs from MongoDB, as
 noted in the evaluation contract.
