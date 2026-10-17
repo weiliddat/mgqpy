@@ -3,7 +3,7 @@ from itertools import zip_longest
 from numbers import Number
 from typing import List
 
-from mgqpy.utils import coerce
+from mgqpy.utils import coerce, is_array_index
 
 
 def _match_lt(doc, path: List[str], ov) -> bool:
@@ -48,7 +48,7 @@ def _match_lt(doc, path: List[str], ov) -> bool:
     if isinstance(doc, dict) and key in doc:
         return _match_lt(doc[key], rest, ov)
 
-    if isinstance(doc, list) and key.isdigit():
+    if isinstance(doc, list) and is_array_index(key):
         idx = int(key)
         if idx < len(doc):
             return _match_lt(doc[idx], rest, ov)

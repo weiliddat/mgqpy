@@ -1,6 +1,7 @@
 from typing import List
 
 import mgqpy
+from mgqpy.utils import is_array_index
 
 
 def _match_all(doc, path: List[str], ov) -> bool:
@@ -26,7 +27,7 @@ def _match_all(doc, path: List[str], ov) -> bool:
     if isinstance(doc, dict) and key in doc:
         return _match_all(doc[key], rest, ov)
 
-    if isinstance(doc, list) and key.isdigit():
+    if isinstance(doc, list) and is_array_index(key):
         idx = int(key)
         if idx < len(doc):
             return _match_all(doc[idx], rest, ov)

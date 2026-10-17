@@ -2,8 +2,25 @@
 
 import datetime
 import decimal
+import math
+from numbers import Number
 import uuid
 from typing import Any, Sequence
+
+
+def is_array_index(key: str) -> bool:
+    """Only canonical, nonnegative ASCII integers are array indices."""
+    return key == "0" or (
+        key.isascii() and key.isdecimal() and not key.startswith("0")
+    )
+
+
+def is_finite_number(value) -> bool:
+    return (
+        isinstance(value, Number)
+        and not isinstance(value, (bool, complex))
+        and (isinstance(value, int) or math.isfinite(value))
+    )
 
 
 def coerce(a: Any, b: Any) -> tuple[Any, Any]:

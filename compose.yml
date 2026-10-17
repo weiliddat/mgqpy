@@ -1,5 +1,9 @@
 services:
   mongo:
-    image: mongo:7
+    image: mongo:${MONGODB_VERSION:-7}
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
+    ulimits:
+      nofile:
+        soft: 64000
+        hard: 64000

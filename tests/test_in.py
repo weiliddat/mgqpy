@@ -120,16 +120,10 @@ testcases = [
 
 
 @pytest.mark.parametrize("name,query,input,expected", testcases)
-def test_mgqpy_in(test_db, benchmark, name, query, input, expected):
+def test_mgqpy_in(test_db, name, query, input, expected):
     mongo_expected = get_mongo_results(test_db, query, input)
     assert expected == mongo_expected, name
 
     q = Query(query)
-    actual = benchmark(get_filter_results, q.test, input)
+    actual = get_filter_results(q.test, input)
     assert actual == expected, name
-
-
-def test_mgqpy_invalid_query():
-    query = {"foo": {"$in": "str"}}
-    q = Query(query)
-    assert q.test({"foo": "str"}) is False

@@ -211,10 +211,27 @@ testcases = [
 
 
 @pytest.mark.parametrize("name,query,input,expected", testcases)
-def test_mgqpy_regex(test_db, benchmark, name, query, input, expected):
+def test_mgqpy_regex(test_db, name, query, input, expected):
     mongo_expected = get_mongo_results(test_db, query, input)
     assert expected == mongo_expected, name
 
     q = Query(query)
-    actual = benchmark(get_filter_results, q.test, input)
+    actual = get_filter_results(q.test, input)
     assert actual == expected, name
+
+
+@pytest.mark.parametrize("expression,expected_values", [
+    ({"$regex": r"^\w+$"}, ["abc", "a", "2", "a\n"]),
+    (re.compile(r"^\w+$"), ["abc", "a", "2", "a\n"]),
+    ({"$in": [re.compile(r"^\w+$")]}, ["abc", "a", "2", "a\n"]),
+    ({"$not": re.compile(r"^\w+$")}, ["é", "١", ""]),
+    ({"$regex": r"^\d+$", "$options": "u"}, ["2"]),
+    ({"$regex": re.compile(r"^\d+$")}, ["2"]),
+    ({"$regex": "(?P<word>a)"}, ["abc", "a", "a\n"]),
+])
+def test_regex_subset_against_mongo(test_db, expression, expected_values):
+    documents = [{"x": value} for value in ["abc", "a", "2", "é", "١", "a\n", ""]]
+    expected = [{"x": value} for value in expected_values]
+    query = {"x": expression}
+    assert get_mongo_results(test_db, query, documents) == expected
+    assert get_filter_results(Query(query).test, documents) == expected

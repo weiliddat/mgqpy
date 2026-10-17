@@ -21,6 +21,8 @@
 #
 # Doc refers to the object that is passed to the compiled filter function
 
+from copy import deepcopy
+import re
 from typing import List
 
 from .operators.and_or_nor import _match_and, _match_or, _match_nor, _validate_query_ops
@@ -30,11 +32,11 @@ from .operators.eq_ne_not import _match_eq, _match_ne, _match_not
 from .operators.exists import _match_exists
 from .operators.gt import _match_gt
 from .operators.gte import _match_gte
-from .operators.in_nin import _match_in, _match_nin, _validate_in_nin
+from .operators.in_nin import _match_in, _match_nin
 from .operators.lt import _match_lt
 from .operators.lte import _match_lte
 from .operators.mod import _match_mod, _validate_mod
-from .operators.regex import _match_regex
+from .operators.regex import _match_regex, _compile_regex
 from .operators.size import _match_size, _validate_size
 
 cond_ops = {
@@ -63,17 +65,28 @@ query_ops = {
 }
 
 
+class InvalidQuery(ValueError):
+    """The query is malformed or uses an unsupported operator or regex."""
+
+
 class Query:
     def __init__(self, query):
-        self._query = query
-        pass
+        try:
+            query = deepcopy(query)
+            _validate_keys(query)
+            self._query = _validate(query)
+        except (TypeError, ValueError, ArithmeticError, RecursionError) as error:
+            raise InvalidQuery(str(error)) from error
 
     def test(self, doc) -> bool:
-        return _match_cond(self._query, doc)
-
-    def validate(self):
-        _validate(self._query)
-        return self
+        if not isinstance(doc, dict):
+            raise TypeError("document must be a dict")
+        try:
+            return bool(_match_cond(self._query, doc))
+        except (TypeError, ValueError, ArithmeticError, RecursionError):
+            # Interim policy until container comparisons and traversal are reworked:
+            # an unevaluable document is a non-match, including under negation.
+            return False
 
 
 def _match_cond(query, doc):
@@ -95,7 +108,7 @@ def _match_cond(query, doc):
             if is_all_exp:
                 exp = exp_or_ov
                 if "$eq" in exp:
-                    results.append(_match_eq(doc, path_parts, exp["$eq"]))
+                    results.append(_match_eq(doc, path_parts, exp["$eq"], regex=False))
                 if "$ne" in exp:
                     results.append(_match_ne(doc, path_parts, exp["$ne"]))
                 if "$gt" in exp:
@@ -113,11 +126,7 @@ def _match_cond(query, doc):
                 if "$not" in exp:
                     results.append(_match_not(doc, path, exp["$not"]))
                 if "$regex" in exp:
-                    ov = {
-                        "$regex": exp["$regex"],
-                        "$options": exp.get("$options", ""),
-                    }
-                    results.append(_match_regex(doc, path_parts, ov))
+                    results.append(_match_regex(doc, path_parts, exp["$regex"]))
                 if "$mod" in exp:
                     results.append(_match_mod(doc, path_parts, exp["$mod"]))
                 if "$all" in exp:
@@ -137,68 +146,95 @@ def _match_cond(query, doc):
     return all(results)
 
 
-def _validate(query) -> bool:
+def _validate(query):
     if not isinstance(query, dict):
         raise TypeError("query must be a dict")
 
-    for path in query:
-        if isinstance(path, str) and path.startswith("$") and path not in query_ops:
+    query = query.copy()
+    for path, value in query.items():
+        if path.startswith("$") and path not in query_ops:
             raise TypeError(f"unknown top-level operator: {path}")
-        if isinstance(path, str) and path in query_ops:
-            if path == "$and":
-                if not _validate_query_ops(query["$and"]):
-                    raise TypeError("$and operator value must be a list")
-            if path == "$or":
-                if not _validate_query_ops(query["$or"]):
-                    raise TypeError("$or operator value must be a list")
-            if path == "$nor":
-                if not _validate_query_ops(query["$nor"]):
-                    raise TypeError("$nor operator value must be a list")
-            for cond in query[path]:
-                _validate(cond)
+        if path in query_ops:
+            if not _validate_query_ops(value) or not value:
+                raise TypeError(f"{path} operator value must be a nonempty list")
+            query[path] = [_validate(child) for child in value]
         else:
-            exp_or_ov = query[path]
-            is_all_exp = _check_all_exp(exp_or_ov)
-            # Like MongoDB, a dict whose first key starts with $ is an operator
-            # expression; any other dict is a literal value to compare against
-            if not is_all_exp and isinstance(exp_or_ov, dict) and exp_or_ov:
-                first = next(iter(exp_or_ov))
-                if isinstance(first, str) and first.startswith("$"):
-                    unknown = next(k for k in exp_or_ov if k not in cond_ops)
-                    raise TypeError(f"unknown operator: {unknown}")
-            if is_all_exp:
-                exp = exp_or_ov
-                if "$not" in exp and isinstance(exp["$not"], dict):
-                    _validate({path: exp["$not"]})
-                if "$elemMatch" in exp:
-                    elem = exp["$elemMatch"]
-                    if not isinstance(elem, dict):
-                        raise TypeError("$elemMatch operator value must be a dict")
-                    if _check_all_exp(elem):
-                        raise TypeError(
-                            "$elemMatch with operators on values is not supported"
-                        )
-                    _validate(elem)
-                if "$all" in exp and _is_all_elem_match(exp["$all"]):
-                    for elem_match in exp["$all"]:
-                        _validate({path: elem_match})
-                if "$in" in exp and not _validate_in_nin(exp["$in"]):
-                    raise TypeError("$in operator value must be a list")
-                if "$nin" in exp and not _validate_in_nin(exp["$nin"]):
-                    raise TypeError("$nin operator value must be a list")
-                if "$all" in exp and not _validate_all(exp["$all"]):
-                    raise TypeError("$all operator value must be a list")
-                if "$mod" in exp and not _validate_mod(exp["$mod"]):
-                    raise TypeError("$mod operator value must be a list of 2 numbers")
-                if "$size" in exp and not _validate_size(exp["$size"]):
-                    raise TypeError("$size operator value must be a number")
+            query[path] = _validate_expression(value)
+    return query
 
-    return True
+
+def _validate_expression(value):
+    if isinstance(value, re.Pattern):
+        return _compile_regex(value)
+    # As in MongoDB, the first key distinguishes an expression from a literal.
+    if not isinstance(value, dict) or not value or not next(iter(value)).startswith("$"):
+        return value
+
+    # A caller can reuse a dict/list as both an expression and a literal operand.
+    # Normalize expressions without changing that literal, even in our snapshot.
+    value = value.copy()
+    for op in value:
+        if op not in cond_ops:
+            raise TypeError(f"unknown operator: {op}")
+        if op in {"$ne", "$gt", "$gte", "$lt", "$lte"} and isinstance(value[op], re.Pattern):
+            raise TypeError(f"{op} does not accept a regex operand")
+    if "$options" in value and "$regex" not in value:
+        raise TypeError("$options requires $regex")
+    if "$regex" in value:
+        value["$regex"] = _compile_regex(value["$regex"], value.pop("$options", ""))
+    if "$not" in value:
+        child = value["$not"]
+        if not isinstance(child, re.Pattern) and not (
+            isinstance(child, dict) and child and next(iter(child)).startswith("$")
+        ):
+            raise TypeError("$not requires a regex or a nonempty operator expression")
+        value["$not"] = _validate_expression(child)
+    if "$elemMatch" in value:
+        child = value["$elemMatch"]
+        if not isinstance(child, dict):
+            raise TypeError("$elemMatch operator value must be a dict")
+        if any(key.startswith("$") and key not in query_ops for key in child):
+            raise TypeError("$elemMatch with operators on values is not supported")
+        value["$elemMatch"] = _validate(child)
+    for op in ("$in", "$nin", "$all"):
+        if op not in value:
+            continue
+        operands = value[op]
+        if not isinstance(operands, list):
+            raise TypeError(f"{op} operator value must be a list")
+        operands = value[op] = operands.copy()
+        for i, operand in enumerate(operands):
+            if _check_all_exp(operand):
+                if op != "$all" or set(operand) != {"$elemMatch"}:
+                    raise TypeError(f"{op} does not accept operator expressions here")
+                operands[i] = _validate_expression(operand)
+            elif isinstance(operand, re.Pattern) and op != "$all":
+                operands[i] = _compile_regex(operand)
+        if op == "$all":
+            has_elem_match = any(isinstance(o, dict) and "$elemMatch" in o for o in operands)
+            if not _validate_all(operands) or (has_elem_match and not _is_all_elem_match(operands)):
+                raise TypeError("$all cannot mix $elemMatch with literal values")
+    if "$mod" in value and not _validate_mod(value["$mod"]):
+        raise TypeError("$mod requires two finite int64-convertible numbers and a nonzero truncated divisor")
+    if "$size" in value and not _validate_size(value["$size"]):
+        raise TypeError("$size requires a nonnegative integer")
+    return value
+
+
+def _validate_keys(value):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if not isinstance(key, str):
+                raise TypeError("field keys must be strings")
+            _validate_keys(child)
+    elif isinstance(value, (list, tuple)):
+        for child in value:
+            _validate_keys(child)
 
 
 def _check_all_exp(exp_or_ov):
     return (
         exp_or_ov
         and isinstance(exp_or_ov, dict)
-        and all(key in cond_ops for key in exp_or_ov.keys())
+        and next(iter(exp_or_ov)).startswith("$")
     )

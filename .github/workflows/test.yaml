@@ -6,14 +6,30 @@ on:
       - main
     paths:
       - '**.py'
+      - pyproject.toml
+      - uv.lock
+      - compose.yml
+      - '.github/workflows/**'
   pull_request:
     paths:
       - '**.py'
+      - pyproject.toml
+      - uv.lock
+      - compose.yml
+      - '.github/workflows/**'
   workflow_dispatch:
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.11', '3.12', '3.13']
+        mongodb: ['7', '8']
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+      MONGODB_VERSION: ${{ matrix.mongodb }}
 
     steps:
       - name: Checkout
@@ -31,7 +47,18 @@ jobs:
       - name: Test coverage
         run: uv run pytest --cov=mgqpy --cov-report xml
 
+      - name: Installed wheel smoke test
+        run: |
+          uv build --wheel
+          cd "$(mktemp -d)"
+          uv run --isolated --no-project --with "$GITHUB_WORKSPACE"/dist/*.whl python "$GITHUB_WORKSPACE/tests/smoke_wheel.py"
+
+      - name: Compose down
+        if: always()
+        run: docker compose down --volumes
+
       - name: Upload to codecov
+        if: matrix.python == '3.13' && matrix.mongodb == '8'
         uses: codecov/codecov-action@v5
         with:
           files: ./coverage.xml

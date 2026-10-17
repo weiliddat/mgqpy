@@ -1,5 +1,5 @@
 from mgqpy.operators.eq_ne_not import _match_eq
-
+from mgqpy.utils import is_array_index
 
 from typing import List
 
@@ -20,7 +20,7 @@ def _match_in(doc, path: List[str], ov) -> bool:
     if isinstance(doc, dict) and key in doc:
         return _match_in(doc[key], rest, ov)
 
-    if isinstance(doc, list) and key.isdigit():
+    if isinstance(doc, list) and is_array_index(key):
         idx = int(key)
         if idx < len(doc):
             return _match_in(doc[idx], rest, ov)
