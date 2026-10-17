@@ -122,6 +122,8 @@ def _compile_expression(parts, value):
         operand = value[op]
         if op == "$not":
             predicate = negate(_compile_expression(parts, operand))
+        elif op == "$all" and not operand:
+            predicate = disjunction(())
         elif op == "$all" and operand and _is_all_elem_match(operand):
             predicate = conjunction(tuple(_field(parts, _match_elem_match, child["$elemMatch"], False)
                                           for child in operand))

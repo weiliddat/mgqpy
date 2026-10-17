@@ -215,6 +215,23 @@ class BrokenTail(list):
         raise self.error
 
 
+def test_empty_all_does_not_traverse_but_keeps_validation_and_operator_order():
+    error = RuntimeError("unreadable tail")
+    doc = {"x": BrokenTail([{"y": []}], error)}
+    for query, expected in (
+        ({"x.y": {"$all": []}}, False),
+        ({"x.y": {"$not": {"$all": []}}}, True),
+        ({"$nor": [{"x.y": {"$all": []}}]}, True),
+    ):
+        assert Query(query).test(doc) is expected
+    # $gt precedes $all in operator order, regardless of insertion order.
+    with pytest.raises(RuntimeError) as caught:
+        Query({"x.y": {"$all": [], "$gt": 0}}).test(doc)
+    assert caught.value is error
+    with pytest.raises(InvalidQuery):
+        Query({"x.y": {"$all": [], "$size": -1}})
+
+
 @pytest.mark.parametrize("expression,value,result", [
     (7, 7, True), ({"$ne": 7}, 7, False),
     ({"$gt": 6}, 7, True), ({"$gte": 7}, 7, True),

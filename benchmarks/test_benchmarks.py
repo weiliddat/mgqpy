@@ -59,6 +59,8 @@ MATCH_CASES.extend([
     ("scalar-array-null", {"x.y": None}, {"x": [1] * 100}, False),
     ("nested-leaf", {"x": 73}, {"x": [[73]] * 100}, False),
     ("missing-null", {"a.b.c": None}, {}, True),
+    ("empty-all", {"x.y": {"$all": []}}, {"x": [{"y": []}] * 100}, False),
+    ("empty-all-negated", {"x.y": {"$not": {"$all": []}}}, {"x": [{"y": []}] * 100}, True),
 ])
 
 

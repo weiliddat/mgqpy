@@ -347,7 +347,7 @@ splits, slices and index classification. Python 3.11 medians are 0.515 µs (flat
 (regex), and 1.621 µs (logical composition). These are shared-orb observations,
 not universal performance guarantees.
 
-The opt-in suite now has 83 cases. New cases cover early/last/missing matches
+The opt-in suite now has 85 cases. New cases cover early/last/missing matches
 through 100 subdocuments for equality, membership, existence, size, all and
 elemMatch, plus numeric-field alternatives, indexed misses, scalar-array/null
 and nested-leaf controls. Correct indexed misses now search literal numeric
@@ -363,6 +363,12 @@ These results include the review fix that normalizes the final result with
 comparisons can return non-booleans, so the public contract needs this boundary.
 Pickle reconstruction recompiles the private query snapshot; it adds no work to
 matching and preserves process-pool use.
+
+Empty `$all` compiles to a constant false at its operator position. The positive
+and negated 100-subdocument controls take 0.158/0.199 µs on Python 3.11, versus
+0.813/1.615 µs in `v1-base`, using the same interleaved method. No path lookup or
+iteration is needed; earlier operators and construction-time validation remain
+unchanged. Both controls are faster than either baseline on all four interpreters.
 
 Construction remains separately measured by `test_construct`; compilation
 intentionally moves work out of repeated matching. Correctness and installed-
