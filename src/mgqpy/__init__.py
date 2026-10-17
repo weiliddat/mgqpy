@@ -27,18 +27,15 @@ from numbers import Number
 import re
 from typing import Any
 
+from .comparison import equal as _equal, _match_gt, _match_gte, _match_lt, _match_lte
+from .operators.all import compile_all
 from .operators.and_or_nor import conjunction, disjunction, negate
-from .operators.all import _match_all, _validate_all, _is_all_elem_match
 from .operators.elem_match import _match_elem_match
 from .operators.eq_ne_not import _match_eq
 from .operators.exists import _match_exists
-from .operators.gt import _match_gt
-from .operators.gte import _match_gte
 from .operators.in_nin import _match_in
-from .operators.lt import _match_lt
-from .operators.lte import _match_lte
 from .operators.mod import _match_mod, _validate_mod
-from .operators.regex import _match_regex, _compile_regex
+from .operators.regex import _Regex, _match_regex, _compile_regex
 from .operators.size import _match_size, _validate_size
 from .path import compile_path, walk
 
@@ -108,17 +105,17 @@ def _field(parts, match, operand, expand_leaf=True):
 
 # Preserve the established operator evaluation order, independent of key order.
 _value_ops = {
-    "$eq": _match_eq, "$ne": _match_eq,
+    "$eq": _equal, "$ne": _equal,
     "$gt": _match_gt, "$gte": _match_gte, "$lt": _match_lt, "$lte": _match_lte,
     "$in": _match_in, "$nin": _match_in, "$not": None,
-    "$regex": _match_regex, "$mod": _match_mod, "$all": _match_all,
+    "$regex": _match_regex, "$mod": _match_mod, "$all": None,
     "$elemMatch": _match_elem_match, "$size": _match_size, "$exists": _match_exists,
 }
 
 
 def _compile_expression(parts, value):
-    if not _check_all_exp(value):
-        return _field(parts, _match_eq, value)
+    if not _is_expression(value):
+        return _field(parts, _match_eq if isinstance(value, _Regex) else _equal, value)
     predicates = []
     for op, match in _value_ops.items():
         if op not in value:
@@ -128,11 +125,13 @@ def _compile_expression(parts, value):
             predicate = negate(_compile_expression(parts, operand))
         elif op == "$all" and not operand:
             predicate = disjunction(())
-        elif op == "$all" and operand and _is_all_elem_match(operand):
-            predicate = conjunction(tuple(_field(parts, _match_elem_match, child["$elemMatch"], False)
-                                          for child in operand))
+        elif op == "$all":
+            if _is_expression(operand[0]):
+                predicate = compile_all(parts, tuple(child["$elemMatch"] for child in operand), _match_elem_match)
+            else:
+                predicate = compile_all(parts, tuple(operand), _match_eq)
         else:
-            predicate = _field(parts, match, operand, op not in {"$all", "$elemMatch", "$size", "$exists"})
+            predicate = _field(parts, match, operand, op not in {"$elemMatch", "$size", "$exists"})
             if op in {"$ne", "$nin"}:
                 predicate = negate(predicate)
             if op == "$exists" and (operand is None or (isinstance(operand, Number) and operand == 0)):
@@ -145,7 +144,7 @@ def _validate_expression(value, location):
     if isinstance(value, re.Pattern):
         return _compile_regex(value)
     # As in MongoDB, the first key distinguishes an expression from a literal.
-    if not isinstance(value, dict) or not value or not next(iter(value)).startswith("$"):
+    if not _is_expression(value):
         return value
 
     # A caller can reuse a dict/list as both an expression and a literal operand.
@@ -162,9 +161,7 @@ def _validate_expression(value, location):
         value["$regex"] = _compile_regex(value["$regex"], value.pop("$options", ""))
     if "$not" in value:
         child = value["$not"]
-        if not isinstance(child, re.Pattern) and not (
-            isinstance(child, dict) and child and next(iter(child)).startswith("$")
-        ):
+        if not isinstance(child, re.Pattern) and not _is_expression(child):
             raise TypeError("$not requires a regex or a nonempty operator expression")
         value["$not"] = _validate_expression(child, f"{location}.$not")
     if "$elemMatch" in value:
@@ -182,15 +179,15 @@ def _validate_expression(value, location):
             raise TypeError(f"{op} operator value must be a list")
         operands = value[op] = operands.copy()
         for i, operand in enumerate(operands):
-            if _check_all_exp(operand):
+            if _is_expression(operand):
                 if op != "$all" or set(operand) != {"$elemMatch"}:
                     raise TypeError(f"{op} does not accept operator expressions here")
                 operands[i] = _validate_expression(operand, f"{location}.{op}[{i}]")
-            elif isinstance(operand, re.Pattern) and op != "$all":
+            elif isinstance(operand, re.Pattern):
                 operands[i] = _compile_regex(operand)
         if op == "$all":
-            has_elem_match = any(isinstance(o, dict) and "$elemMatch" in o for o in operands)
-            if not _validate_all(operands) or (has_elem_match and not _is_all_elem_match(operands)):
+            has_elem_match = any(_is_expression(o) for o in operands)
+            if has_elem_match and not all(_is_expression(o) and set(o) == {"$elemMatch"} for o in operands):
                 raise TypeError("$all cannot mix $elemMatch with literal values")
     if "$mod" in value:
         if not _validate_mod(value["$mod"]):
@@ -235,9 +232,5 @@ def _validate_keys(value):
             _validate_keys(child)
 
 
-def _check_all_exp(exp_or_ov):
-    return (
-        exp_or_ov
-        and isinstance(exp_or_ov, dict)
-        and next(iter(exp_or_ov)).startswith("$")
-    )
+def _is_expression(value):
+    return isinstance(value, dict) and bool(value) and next(iter(value)).startswith("$")

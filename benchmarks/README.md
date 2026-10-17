@@ -373,3 +373,91 @@ unchanged. Both controls are faster than either baseline on all four interpreter
 Construction remains separately measured by `test_construct`; compilation
 intentionally moves work out of repeated matching. Correctness and installed-
 wheel checks run separately from these CPU-only measurements.
+
+## Shared value comparison
+
+Shared equality and BSON ordering apply pairwise native conversion recursively.
+Range matching reuses converted, classified pairs instead of preparing them
+again. Exact built-in numbers keep direct range entries; successful date/UUID
+conversion uses same-type equality without repeating generic classification.
+
+`$all` walks a path once and replays reached leaves for later requirements.
+Requirements stay ordered, and a deciding match does not force the remaining
+path. Exact built-in numeric/string arrays use C-level membership after checking
+bounded prefixes, not the entire unread tail. Bools, NaN operands, native values,
+regexes and containers use shared equality. Certification lives only within one
+evaluation; mutable documents are never cached between calls.
+
+### Four-interpreter gate
+
+Measured on 2026-10-17 in the same orb, comparing independent imports of
+[0.9.0](https://github.com/weiliddat/mgqpy/commit/f22a920babc0a37dd07fbe4dae94632f81d9b79d),
+[v1-base](https://github.com/weiliddat/mgqpy/commit/ff986702adf4bb65c22ccd58a00be5f12c5a8d1d)
+and the value branch. Source paths and function globals were checked. Each
+predicate had to return the expected boolean before timing; incorrect or raising
+old versions were excluded rather than reported as speedups. Construction was
+outside timing. Each case used 200 warmup calls and 24 shuffled/interleaved
+`timeit` blocks, GC disabled, with `random.Random(4361)`. Equal iteration counts
+targeted 20 ms per block, bounded to 100–100,000 calls. Interpreters ran serially.
+
+The gate covers 132 matching cases from `test_benchmarks.py` plus the nine numeric
+range controls above. The opt-in suite separately passes 154 matching/construction
+cases. Added controls include early/last/missing document equality, all four
+document/binary ranges with 100-value last-hit and all-miss arrays, date/UUID
+last-hit and all-miss arrays, and numeric/string `$all` prefix hits in 10,000- and
+100,000-value arrays, including shifted prefixes and reversed requirements.
+
+The gate excludes traversal costs inherited from `v1-paths` (late/missing `$size`
+and `$exists`, and indexed misses), which `v1-values` does not change. For example,
+Python 3.11 indexed misses take 2.277 → 23.307 µs because numeric-field alternatives
+require scanning subdocuments; [Shared compiled traversal](#shared-compiled-traversal)
+explains why.
+
+The original 55-workload subset remains faster than both baselines. In the
+expanded gate, comparison/native controls also meet `v1-base`, with two accepted
+exceptions: ordered-document equality and sub-microsecond `$all` overhead.
+
+| Python | Original: new / 0.9.0 | Original: new / base | Expanded controls: new / base | Largest $all overhead |
+| --- | ---: | ---: | ---: | ---: |
+| 3.10.21 | 0.529× | 0.832× | 0.985× | 0.979 µs |
+| 3.11.6 | 0.492× | 0.877× | 0.922× | 0.553 µs |
+| 3.12.14 | 0.536× | 0.894× | 0.976× | 0.290 µs |
+| 3.13.15 | 0.514× | 0.887× | 0.987× | 0.931 µs |
+
+Ratios are the worst comparable median in each group; expanded-control ratios
+exclude the two exceptions and inherited traversal costs. 0.9.0's Python 3.10
+explicit regex raises, leaving 54 comparable original cases there. One Python
+3.12 document `$gte` last-hit observation was 0.5% slower than base. A focused
+repeat of all eight document-range controls, with 32 interleaved 50 ms blocks,
+measured every control faster without a code change (`$gte`: 55.603 → 50.362 µs);
+the expanded-control ratio uses that repeat. These shared-orb medians are not
+universal performance guarantees or CI thresholds.
+
+### Prefix matching stays bounded; full scans remain controls
+
+Python 3.11 medians, microseconds per evaluation:
+
+| Matching | v1-base | Values |
+| --- | ---: | ---: |
+| Numeric $all, first two of 10,000 | 2.290 | 2.038 |
+| Numeric $all, first two of 100,000 | 2.275 | 2.049 |
+| String $all, first two of 10,000 | 2.245 | 2.067 |
+| String $all, first two of 100,000 | 2.271 | 2.115 |
+| Document $gt, last of 100 | 62.067 | 56.270 |
+| Binary $gt, last of 100 | 88.040 | 48.677 |
+| Date/string equality, last of 100 | 66.622 | 46.678 |
+| Date/string equality, all miss | 66.539 | 46.483 |
+| UUID/string equality, last of 100 | 198.083 | 150.079 |
+| UUID/string equality, all miss | 200.851 | 152.368 |
+| Ordered document equality, last of 100 | 74.950 | 113.048 |
+| Ordered document equality, all miss | 75.715 | 114.088 |
+| Native document equality, all miss | 106.724 | 197.267 |
+
+Recursive document equality intentionally replaces Python's C-level dict
+equality: it checks key order, bool/number separation, NaNs and native scalar
+pairs within containers. Last-hit document equality costs about 1.5–1.6× base
+across interpreters; the native-document miss costs about 1.8–2.2×. Small `$all`
+cases retain the sub-microsecond overhead above, but large prefix hits no longer
+scale with the unread array length. Native-container hits that old versions
+reject have no comparable baseline timing. Construction remains measured
+separately; reuse queries when matching many documents.

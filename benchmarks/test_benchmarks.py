@@ -1,5 +1,9 @@
 """Opt-in CPU-only baselines; run `uv run pytest benchmarks`."""
 
+from datetime import date
+from decimal import Decimal
+from uuid import UUID
+
 import pytest
 
 from mgqpy import Query
@@ -23,6 +27,16 @@ CASES = [
      {"a": {"b": {"c": {"d": {"e": 73}}}}}),
     ("array-mod", {"x": {"$mod": [3, 1]}}, {"x": list(range(100))}),
     ("array-mod-last", {"x": {"$mod": [3, 1]}}, {"x": [0] * 99 + [1]}),
+    ("ordered-document", {"x": {"a": 1, "b": [2, 3]}}, {"x": {"a": 1, "b": [2, 3]}}),
+    ("array-range", {"x": {"$gt": [1, 2]}}, {"x": [1, 3]}),
+    ("document-range", {"x": {"$gt": {"a": 1}}}, {"x": {"a": 2}}),
+    ("all", {"x": {"$all": [72, 73]}}, {"x": list(range(100))}),
+    ("all-string", {"x": {"$all": ["t72", "t73"]}},
+     {"x": [f"t{i}" for i in range(100)]}),
+    ("date", {"x": "2024-08-01"}, {"x": date(2024, 8, 1)}),
+    ("decimal", {"x": {"$gte": "3.14"}}, {"x": Decimal("3.14")}),
+    ("uuid", {"x": "0123456789abcdef0123456789abcdef"},
+     {"x": UUID("0123456789abcdef0123456789abcdef")}),
 ]
 
 
@@ -61,6 +75,70 @@ MATCH_CASES.extend([
     ("missing-null", {"a.b.c": None}, {}, True),
     ("empty-all", {"x.y": {"$all": []}}, {"x": [{"y": []}] * 100}, False),
     ("empty-all-negated", {"x.y": {"$not": {"$all": []}}}, {"x": [{"y": []}] * 100}, True),
+])
+
+
+for name, operand, hit, miss in (
+    ("string", "target", "target", "other"),
+    ("document", {"a": [1, 2]}, {"a": [1, 2]}, {"a": [1, 3]}),
+    ("array", [1, {"a": 2}], [1, {"a": 2}], [1, {"a": 3}]),
+    ("native-document", {"a": ["3.14"]}, {"a": [Decimal("3.14")]}, {"a": [Decimal("3.15")]}),
+):
+    for position in (0, 99, None):
+        values = [miss] * 100
+        if position is not None:
+            values[position] = hit
+        MATCH_CASES.append((f"value-{name}-{position}", {"x": operand}, {"x": values}, position is not None))
+
+for name, first, second, miss in (("number", 72, 73, 0), ("string", "t72", "t73", "other")):
+    for position in (0, 98, None):
+        values = [miss] * 100
+        if position is None:
+            values[-1] = first
+        else:
+            values[position:position + 2] = [first, second]
+        MATCH_CASES.append((f"all-{name}-{position}", {"x": {"$all": [first, second]}},
+                            {"x": values}, position is not None))
+    for length in (10_000, 100_000):
+        MATCH_CASES.append((f"all-{name}-prefix-{length}", {"x": {"$all": [first, second]}},
+                            {"x": [first, second] + [miss] * (length - 2)}, True))
+    MATCH_CASES.append((f"all-{name}-shifted-prefix", {"x": {"$all": [second, first]}},
+                        {"x": [miss] * 17 + [first, second] + [miss] * 9981}, True))
+
+for op, number, other in (("$gt", 2, 0), ("$gte", 1, 0), ("$lt", 0, 2), ("$lte", 1, 2)):
+    for name, operand, hit, miss in (
+        ("document", {"a": 1}, {"a": number}, {"a": other}),
+        ("binary", b"b", bytes([97 + number]), bytes([97 + other])),
+    ):
+        for position in (99, None):
+            values = [miss] * 100
+            if position is not None:
+                values[position] = hit
+            MATCH_CASES.append((f"range-{name}-{op[1:]}-{position}", {"x": {op: operand}},
+                                {"x": values}, position is not None))
+
+for name, operand, hit, miss in (
+    ("date", "2024-08-01", date(2024, 8, 1), date(2024, 7, 31)),
+    ("uuid", "0123456789abcdef0123456789abcdef",
+     UUID("0123456789abcdef0123456789abcdef"), UUID(int=0)),
+):
+    for position in (99, None):
+        values = [miss] * 100
+        if position is not None:
+            values[position] = hit
+        MATCH_CASES.append((f"value-{name}-{position}", {"x": operand}, {"x": values}, position is not None))
+
+MATCH_CASES.extend([
+    ("bool-not-number", {"x": 1}, {"x": True}, False),
+    ("nan-equality", {"x": float("nan")}, {"x": float("nan")}, True),
+    ("nan-direct-range", {"x": {"$lte": float("nan")}}, {"x": float("nan")}, True),
+    ("nan-array-range", {"x.0": {"$lt": [0]}}, {"x": [[float("nan")]]}, True),
+    ("type-before-key", {"x": {"$gt": {"z": 1}}}, {"x": {"a": "x"}}, True),
+    ("all-scalar", {"x": {"$all": [1]}}, {"x": 1}, True),
+    ("all-branches", {"x.y": {"$all": [1, 2]}}, {"x": [{"y": 1}, {"y": 2}]}, True),
+    ("all-native", {"x": {"$all": ["3.14"]}}, {"x": [Decimal("3.14")]}, True),
+    ("native-container-range", {"x": {"$gte": {"a": ["3.14"]}}},
+     {"x": {"a": [Decimal("3.14")]}}, True),
 ])
 
 
