@@ -13,7 +13,9 @@ matching document per invocation. `test_construct` times only `Query(query)`;
 its assertion evaluates the result outside the timed region. Regex construction
 uses Python's warm regex cache. Flat equality, a five-segment dict path, 100
 subdocuments, a 1,000-member `$in`, explicit regex, and combined `$and`/`$or` each
-have both measurements. Dataset definitions live in `test_benchmarks.py`.
+have both measurements. Additional cases cover single-/two-digit indexed paths,
+scalar/deep `$size`, and scalar/deep/100-value-array `$mod`, also with construction
+timings. Dataset definitions live in `test_benchmarks.py`.
 
 ## 0.9.0 versus the initial v1 base
 
@@ -110,3 +112,70 @@ normalization. This halves large-`$in` construction cost (429 → 207 µs), with
 changing validation or snapshot isolation. It still scales with operand count;
 0.9.0's unchecked reference assignment is not a comparable construction contract.
 These remain shared-VM measurements, not performance guarantees or thresholds.
+
+## Numeric and indexed matching across Python 3.10–3.13
+
+The follow-up to
+[`7ccb167`](https://github.com/weiliddat/mgqpy/commit/7ccb167fe2f3857aeda3cf6df21537b14af24a32)
+adds the seven workloads missing from the original baseline. Measured on the same
+orb on 2026-10-17, using CPython 3.10.21, 3.11.6, 3.12.14, and 3.13.15. Within
+each interpreter, 0.9.0, the reviewed base, and the corrected base were imported
+as independent module trees, with source paths and matcher identities checked.
+Construction was outside timing; every predicate was checked against the expected
+result and warmed with 100 calls. `timeit` disabled GC. Each workload used the
+same iteration count for all variants, calibrated from 100 calls of the slowest
+variant to target 20 ms per block (minimum 20 iterations). The 20 blocks shuffled
+variant order with `random.Random(4361)`; values below are medians of per-call
+block timings, including identical lambda overhead. Interpreters ran serially.
+
+The new workloads on **Python 3.11**, in microseconds:
+
+| Matching | 0.9.0 | Reviewed base | Corrected base |
+| --- | ---: | ---: | ---: |
+| Indexed equality (`a.9.x`) | 2.010 | 2.049 | 1.869 |
+| Two-digit index (`a.73.x`) | 2.099 | 2.073 | 1.892 |
+| `$size` | 1.738 | 1.972 | 1.036 |
+| Deep `$size` | 3.471 | 4.508 | 1.828 |
+| `$mod` | 2.633 | 5.078 | 1.630 |
+| Deep `$mod` | 5.168 | 12.046 | 2.471 |
+| Array `$mod` | 91.998 | 238.556 | 60.577 |
+
+Ratios of **corrected base / 0.9.0** for every matching workload; lower is faster:
+
+| Matching | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 |
+| --- | ---: | ---: | ---: | ---: |
+| Flat equality | 0.866× | 0.894× | 0.997× | 1.004× |
+| Deep dict path | 0.809× | 0.854× | 0.981× | 0.969× |
+| Arrays of subdocuments | 0.893× | 0.894× | 0.979× | 0.971× |
+| Large `$in` | 0.892× | 0.946× | 0.977× | 0.959× |
+| Regex | N/A | 0.614× | 0.574× | 0.581× |
+| `$and`/`$or` | 0.912× | 0.929× | 0.920× | 0.919× |
+| Indexed equality | 0.873× | 0.930× | 1.005× | 1.002× |
+| Two-digit index | 0.898× | 0.901× | 1.013× | 1.011× |
+| `$size` | 0.549× | 0.596× | 0.611× | 0.547× |
+| Deep `$size` | 0.538× | 0.527× | 0.509× | 0.498× |
+| `$mod` | 0.663× | 0.619× | 0.628× | 0.571× |
+| Deep `$mod` | 0.545× | 0.478× | 0.473× | 0.454× |
+| Array `$mod` | 0.718× | 0.658× | 0.655× | 0.667× |
+
+0.9.0's explicit regex workload raises `AttributeError` on Python 3.10 because
+`re.NOFLAG` is unavailable, so that baseline cannot be timed. The corrected base
+matches successfully at 1.812 µs there. Indexed matching is faster on 3.10/3.11
+and within 1.3% of 0.9.0 on 3.12/3.13; these shared-orb observations do not establish
+an exact zero-overhead guarantee. All other matching medians are faster or within
+0.4% of 0.9.0. Numeric workloads are 28–55% faster than 0.9.0 across interpreters.
+
+`$mod` and `$size` validate and normalize their query operands only at construction;
+matching retains the checks on document values. Equality now distinguishes a
+prepared regex (original literal plus ASCII matcher) from an explicit literal
+regex, so it needs no recursive regex-mode flag. It also uses a direct empty-path
+check and no longer rechecks validated query key types. The canonical index helper
+has a bounded 128-entry cache of boolean results for repeated path segments.
+Traversal semantics and eager array evaluation are unchanged; no path cache or
+new traversal representation is introduced.
+
+The expanded pytest-benchmark suite passes all 26 matching/construction cases.
+A separate short run on Python 3.11 measured construction at 207 µs for large
+`$in`, 4.917 µs for `$mod`, 2.585 µs for `$size`, and 3.477 µs for regex, using
+`--benchmark-min-rounds=5 --benchmark-max-time=0.1 --benchmark-disable-gc`.
+The snapshot copier is unchanged.

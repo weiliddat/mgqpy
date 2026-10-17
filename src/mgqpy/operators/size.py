@@ -4,17 +4,11 @@ from mgqpy.utils import is_array_index, is_finite_number
 
 
 def _match_size(doc, path: List[str], ov) -> bool:
-    if not _validate_size(ov):
-        return False
-
     if len(path) == 0:
         if not isinstance(doc, list):
             return False
 
-        if len(doc) == int(ov):
-            return True
-
-        return False
+        return len(doc) == ov
 
     key = path[0]
     rest = path[1:]
@@ -34,4 +28,4 @@ def _match_size(doc, path: List[str], ov) -> bool:
 
 
 def _validate_size(ov) -> bool:
-    return is_finite_number(ov) and ov >= 0 and ov == int(ov)
+    return is_finite_number(ov) and 0 <= ov <= 2**31 - 1 and ov == int(ov)

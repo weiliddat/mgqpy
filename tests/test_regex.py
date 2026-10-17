@@ -235,3 +235,32 @@ def test_regex_subset_against_mongo(test_db, expression, expected_values):
     query = {"x": expression}
     assert get_mongo_results(test_db, query, documents) == expected
     assert get_filter_results(Query(query).test, documents) == expected
+
+
+@pytest.mark.parametrize("flags", [0, re.I, re.A])
+@pytest.mark.parametrize("operator", ["implicit", "$in", "$nin", "$not"])
+def test_regex_literals_keep_original_flags(test_db, flags, operator):
+    pattern = re.compile(r"^\w+$", flags)
+    other = re.compile(pattern.pattern, (pattern.flags ^ re.ASCII) & ~re.UNICODE)
+    expression = {
+        "implicit": pattern, "$in": {"$in": [pattern]},
+        "$nin": {"$nin": [pattern]}, "$not": {"$not": pattern},
+    }[operator]
+    documents = [
+        {"case": "literal", "x": pattern}, {"case": "array", "x": [pattern]},
+        {"case": "other-flags", "x": other}, {"case": "ascii", "x": "ABC"},
+        {"case": "unicode", "x": "é"}, {"case": "missing"},
+    ]
+    expected = (["other-flags", "unicode", "missing"] if operator in ("$nin", "$not")
+                else ["literal", "array", "ascii"])
+    query = {"x": expression}
+    assert [d["case"] for d in get_mongo_results(test_db, query, documents)] == expected
+    assert [d["case"] for d in get_filter_results(Query(query).test, documents)] == expected
+
+
+@pytest.mark.parametrize("expression", [{"$regex": r"a\0b"}, re.compile(r"a\0b")])
+def test_escaped_null_is_valid_regex_syntax(test_db, expression):
+    query = {"x": expression}
+    documents = [{"x": "a\0b"}, {"x": r"a\0b"}]
+    assert get_mongo_results(test_db, query, documents) == documents[:1]
+    assert get_filter_results(Query(query).test, documents) == documents[:1]

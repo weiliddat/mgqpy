@@ -5,9 +5,6 @@ from mgqpy.utils import is_array_index, is_finite_number
 
 
 def _match_mod(doc, path: List[str], ov) -> bool:
-    if not _validate_mod(ov):
-        return False
-
     if len(path) == 0:
         if isinstance(doc, list) and any([_match_mod(d, path, ov) for d in doc]):
             return True
@@ -15,11 +12,11 @@ def _match_mod(doc, path: List[str], ov) -> bool:
         if not is_finite_number(doc):
             return False
 
-        divisor, expected_remainder = map(math.trunc, ov)
+        divisor, expected_remainder = ov
         dividend = math.trunc(doc)
         if not -(2**63) <= dividend < 2**63:
             return False
-        remainder = abs(dividend) % abs(divisor)
+        remainder = abs(dividend) % divisor
         if dividend < 0:
             remainder = -remainder
         return remainder == expected_remainder

@@ -87,3 +87,11 @@ def test_mgqpy_size(test_db, name, query, input, expected):
     q = Query(query)
     actual = get_filter_results(q.test, input)
     assert actual == expected, name
+
+
+@pytest.mark.parametrize("size", [2147483647, 2147483647.0])
+def test_size_accepts_int32_maximum(test_db, size):
+    query = {"x": {"$size": size}}
+    documents = [{"x": []}, {"x": [1, 2]}]
+    assert get_mongo_results(test_db, query, documents) == []
+    assert get_filter_results(Query(query).test, documents) == []

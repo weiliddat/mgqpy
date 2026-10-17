@@ -13,6 +13,15 @@ CASES = [
     ("regex", {"x": {"$regex": "^item-[0-9]+$"}}, {"x": "item-73"}),
     ("and-or", {"$and": [{"x": {"$gt": 10}}, {"$or": [{"y": 0}, {"y": 2}]}]},
      {"x": 73, "y": 2}),
+    ("indexed-eq", {"a.9.x": 73}, {"a": [{"x": i} for i in range(9)] + [{"x": 73}]}),
+    ("indexed-eq-multi", {"a.73.x": 73}, {"a": [{"x": i} for i in range(100)]}),
+    ("size", {"x": {"$size": 2}}, {"x": [1, 2]}),
+    ("deep-size", {"a.b.c.d.e": {"$size": 2}},
+     {"a": {"b": {"c": {"d": {"e": [1, 2]}}}}}),
+    ("mod", {"x": {"$mod": [3, 1]}}, {"x": 73}),
+    ("deep-mod", {"a.b.c.d.e": {"$mod": [3, 1]}},
+     {"a": {"b": {"c": {"d": {"e": 73}}}}}),
+    ("array-mod", {"x": {"$mod": [3, 1]}}, {"x": list(range(100))}),
 ]
 
 

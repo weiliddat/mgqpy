@@ -98,8 +98,12 @@ Use Python named groups `(?P<name>...)`; PCRE spelling `(?<name>...)` is rejecte
 not rewritten (a textual replacement could change escaped text or character classes).
 Use syntax supported by your Python version; this is not full regex compatibility.
 Malformed or unsupported patterns and flags raise `InvalidQuery`.
+An actual NUL character in a pattern is rejected; escaped syntax such as
+`r"a\0b"` remains valid and can match a NUL in a document string.
 
 An implicit compiled regex or a regex in `$in` matches strings as a pattern.
+It also compares regex-valued fields literally, retaining the original pattern
+and flags separately from the ASCII string matcher.
 Explicit `$eq` with a compiled regex compares the regex as a literal value.
 
 **Patterns must come from trusted sources.** Validation checks syntax, not runtime
@@ -114,7 +118,7 @@ other noncanonical segments remain ordinary field names, not array indices.
 `$mod` truncates numeric operands and document values toward zero and gives the
 remainder the dividend's sign. Like MongoDB, it requires signed 64-bit-convertible
 operands; booleans, non-finite values, and out-of-range document numbers do not match.
-`$size` requires a finite, nonnegative integral number (including `2.0`).
+`$size` requires a finite integral number in `0..2147483647` (including `2.0`).
 
 Traversal and value comparison otherwise retain the 0.9.0 behaviour. Known
 differences remain for nested/mixed arrays, BSON container ordering, bool/number

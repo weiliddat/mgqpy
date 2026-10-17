@@ -22,6 +22,7 @@
 # Doc refers to the object that is passed to the compiled filter function
 
 from copy import deepcopy
+import math
 import re
 from typing import List
 
@@ -91,7 +92,7 @@ def _match_cond(query, doc):
     results: List[bool] = []
 
     for path in query:
-        if isinstance(path, str) and path in query_ops:
+        if path in query_ops:
             if path == "$and":
                 results.append(_match_and(doc, path, query["$and"]))
             if path == "$or":
@@ -106,7 +107,7 @@ def _match_cond(query, doc):
             if is_all_exp:
                 exp = exp_or_ov
                 if "$eq" in exp:
-                    results.append(_match_eq(doc, path_parts, exp["$eq"], regex=False))
+                    results.append(_match_eq(doc, path_parts, exp["$eq"]))
                 if "$ne" in exp:
                     results.append(_match_ne(doc, path_parts, exp["$ne"]))
                 if "$gt" in exp:
@@ -212,10 +213,15 @@ def _validate_expression(value):
             has_elem_match = any(isinstance(o, dict) and "$elemMatch" in o for o in operands)
             if not _validate_all(operands) or (has_elem_match and not _is_all_elem_match(operands)):
                 raise TypeError("$all cannot mix $elemMatch with literal values")
-    if "$mod" in value and not _validate_mod(value["$mod"]):
-        raise TypeError("$mod requires two finite int64-convertible numbers and a nonzero truncated divisor")
-    if "$size" in value and not _validate_size(value["$size"]):
-        raise TypeError("$size requires a nonnegative integer")
+    if "$mod" in value:
+        if not _validate_mod(value["$mod"]):
+            raise TypeError("$mod requires two finite int64-convertible numbers and a nonzero truncated divisor")
+        divisor, remainder = map(math.trunc, value["$mod"])
+        value["$mod"] = (abs(divisor), remainder)
+    if "$size" in value:
+        if not _validate_size(value["$size"]):
+            raise TypeError("$size requires a nonnegative int32")
+        value["$size"] = int(value["$size"])
     return value
 
 

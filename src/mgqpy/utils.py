@@ -2,17 +2,17 @@
 
 import datetime
 import decimal
+from functools import lru_cache
 import math
 from numbers import Number
 import uuid
 from typing import Any, Sequence
 
 
+@lru_cache(maxsize=128)
 def is_array_index(key: str) -> bool:
     """Only canonical, nonnegative ASCII integers are array indices."""
-    return key == "0" or (
-        key.isascii() and key.isdecimal() and not key.startswith("0")
-    )
+    return key == "0" or (key.isascii() and key.isdecimal() and key[0] != "0")
 
 
 def is_finite_number(value) -> bool:
