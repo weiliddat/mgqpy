@@ -6,15 +6,12 @@ from mgqpy.utils import coerce, is_array_index
 import mgqpy
 
 
-# Eager loops avoid comprehension closure cells on every scalar call (Python 3.10/3.11).
 def _match_eq(doc, path: List[str], ov) -> bool:
     if not path:
         if isinstance(doc, list):
-            results = []
             for d in doc:
-                results.append(_match_eq(d, path, ov))
-            if any(results):
-                return True
+                if _match_eq(d, path, ov):
+                    return True
 
         if isinstance(ov, _Regex):
             if isinstance(doc, str):
@@ -36,10 +33,10 @@ def _match_eq(doc, path: List[str], ov) -> bool:
             return _match_eq(doc[idx], rest, ov)
 
     if isinstance(doc, list):
-        results = []
         for d in doc:
-            results.append(_match_eq(d, path, ov))
-        return any(results)
+            if _match_eq(d, path, ov):
+                return True
+        return False
 
     if ov is None:
         return True

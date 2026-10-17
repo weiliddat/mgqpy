@@ -1,4 +1,6 @@
 import re
+import sys
+from decimal import Decimal, InvalidOperation
 
 import pytest
 from pymongo.errors import OperationFailure
@@ -122,8 +124,97 @@ def test_document_must_be_a_dict(doc):
 
 @pytest.mark.parametrize("op", ["$gt", "$gte", "$lt", "$lte"])
 @pytest.mark.parametrize("operand,doc", [({"a": 1}, {"a": "z"}), ([1], ["z"])])
-def test_incomparable_containers_are_interim_non_matches(op, operand, doc):
+def test_reached_container_comparison_errors_propagate(op, operand, doc):
     expression = {op: operand}
-    assert Query({"x": expression}).test({"x": doc}) is False
-    assert Query({"x": {"$not": expression}}).test({"x": doc}) is False
-    assert Query({"$nor": [{"x": expression}]}).test({"x": doc}) is False
+    for query in (
+        {"x": expression},
+        {"x": {"$not": expression}},
+        {"$nor": [{"x": expression}]},
+        {"$or": [{"x": expression}, {}]},
+    ):
+        with pytest.raises(TypeError):
+            Query(query).test({"x": doc})
+
+
+@pytest.mark.parametrize("op,deciding_value,result", [
+    ("$and", False, False), ("$or", True, True), ("$nor", True, False),
+])
+def test_logical_operators_stop_once_decided(op, deciding_value, result):
+    bad = {"x": {"$gt": {"a": 1}}}
+    predicate = Query({op: [{"ok": True}, bad]})
+    assert predicate.test({"ok": deciding_value, "x": {"a": "z"}}) is result
+    with pytest.raises(TypeError):
+        predicate.test({"ok": not deciding_value, "x": {"a": "z"}})
+
+
+def test_implicit_and_and_operator_conjunction_stop_once_decided():
+    doc = {"x": {"a": "z"}}
+    assert Query({"ok": True, "x": {"$gt": {"a": 1}}}).test(doc) is False
+    assert Query({"x": {"$eq": None, "$gt": {"a": 1}}}).test(doc) is False
+    with pytest.raises(TypeError):
+        Query({"x": {"$gt": {"a": 1}}, "ok": True}).test(doc)
+
+
+class BrokenTail(list):
+    """A document array whose tail raises the supplied exception."""
+
+    def __init__(self, prefix, error):
+        super().__init__(prefix)
+        self.error = error
+
+    def __iter__(self):
+        yield from super().__iter__()
+        raise self.error
+
+
+@pytest.mark.parametrize("expression,value,result", [
+    (7, 7, True), ({"$ne": 7}, 7, False),
+    ({"$gt": 6}, 7, True), ({"$gte": 7}, 7, True),
+    ({"$lt": 8}, 7, True), ({"$lte": 7}, 7, True),
+    ({"$in": [7]}, 7, True), ({"$nin": [7]}, 7, False),
+    ({"$not": {"$eq": 7}}, 7, False),
+    ({"$mod": [3, 1]}, 7, True), ({"$regex": "^a"}, "abc", True),
+])
+@pytest.mark.parametrize("dotted", [False, True])
+def test_arrays_stop_at_a_decisive_element(expression, value, result, dotted):
+    key, prefix = ("x.y", {"y": value}) if dotted else ("x", value)
+    predicate = Query({key: expression})
+    error = RuntimeError("unreadable tail")
+    assert predicate.test({"x": BrokenTail([prefix], error)}) is result
+    with pytest.raises(RuntimeError) as caught:
+        predicate.test({"x": BrokenTail([], error)})
+    assert caught.value is error
+
+
+@pytest.mark.parametrize("expression,value", [
+    ({"$size": 2}, [1, 2]), ({"$all": [7]}, [7]),
+    ({"$elemMatch": {"a": 7}}, [{"a": 7}]), ({"$exists": True}, None),
+])
+def test_array_operators_stop_at_a_decisive_subdocument(expression, value):
+    predicate = Query({"x.y": expression})
+    error = RuntimeError("unreadable tail")
+    assert predicate.test({"x": BrokenTail([{"y": value}], error)}) is True
+    with pytest.raises(RuntimeError) as caught:
+        predicate.test({"x": BrokenTail([], error)})
+    assert caught.value is error
+
+
+def test_membership_operands_stop_once_decided():
+    nan = Decimal("sNaN")
+    assert Query({"x": {"$in": [1, nan]}}).test({"x": 1}) is True
+    assert Query({"x": {"$all": [1, nan]}}).test({"x": [0]}) is False
+    for query, doc in (
+        ({"x": {"$in": [nan, 1]}}, {"x": 1}),
+        ({"x": {"$all": [nan, 1]}}, {"x": [0]}),
+        ({"x": {"$gt": 0}}, {"x": Decimal("NaN")}),
+    ):
+        with pytest.raises(InvalidOperation):
+            Query(query).test(doc)
+
+
+def test_deep_document_recursion_error_propagates():
+    value = 0
+    for _ in range(sys.getrecursionlimit()):
+        value = [value]
+    with pytest.raises(RecursionError):
+        Query({"x": 1}).test({"x": value})

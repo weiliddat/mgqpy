@@ -46,9 +46,10 @@ subclass, at construction—even inside `$not`, `$nor`, or an unused logical bra
 Mutating the original query afterward does not change the predicate.
 There is no separate `validate()` method: replace `Query(q).validate()` with `Query(q)`.
 
-For a valid query, `test(document)` returns `True` or `False`. Documents must be
-dicts; other inputs raise `TypeError`. Unsupported operators (for example `$type`)
-and value/operator-form `$elemMatch` (`{"$elemMatch": {"$gt": 1}}`) are rejected.
+For a valid query, `test(document)` returns `True` or `False` when evaluation
+succeeds, and raises the original exception if evaluation fails. Documents must
+be dicts; other inputs raise `TypeError`. Unsupported operators (for example
+`$type`) and value/operator-form `$elemMatch` (`{"$elemMatch": {"$gt": 1}}`) are rejected.
 
 ```python
 from mgqpy import Query
@@ -79,6 +80,63 @@ try:
     predicate = Query({"foo": {"$in": 1}})
 except InvalidQuery as error:
     print(error)  # $in operator value must be a list
+```
+
+## Evaluation contract
+
+- `Query(query)` copies and validates the entire query up front. Invalid or
+  unsupported queries raise `InvalidQuery`, even in branches evaluation might skip.
+- `test(document)` returns `True` or `False` for a valid query if evaluation succeeds.
+- Operators stop once the result is decided: array matching stops at a match,
+  `$or` stops at a true branch, and `$and` stops at a false branch. This also applies
+  to implicit conjunctions, membership operands, and negation. There is **no
+  promise to check every value**; an error in an unreached value does not surface.
+- A reached evaluation error raises its **original exception**, without wrapping
+  it or turning it into a non-match, including under `$not`, `$nor`, and `$or`.
+- Regex patterns must come from **trusted sources**; see the trust boundary below.
+
+Ordinary scalar type mismatches (such as a string against a numeric range operand)
+remain non-matches. Container comparisons and Python-native values can still
+fail. These examples reproduce exceptions callers can encounter; they are not
+an exhaustive list:
+
+```python
+from mgqpy import Query
+
+# TypeError: deferred container comparison tries to compare "z" > 1.
+Query({"x": {"$gt": {"a": 1}}}).test({"x": {"a": "z"}})
+
+# TypeError: the top-level document must be a dict.
+Query({}).test([])
+```
+
+```python
+import sys
+from mgqpy import Query
+
+# RecursionError: matching recurses through a document deeper than Python's limit.
+value = 0
+for _ in range(sys.getrecursionlimit()):
+    value = [value]
+Query({"x": 1}).test({"x": value})
+```
+
+```python
+from decimal import Decimal
+from mgqpy import Query
+
+# decimal.InvalidOperation: ordering Decimal NaN, with the default decimal traps.
+Query({"x": {"$gt": 0}}).test({"x": Decimal("NaN")})
+```
+
+Short-circuiting can avoid a failing comparison, but does not validate a document:
+
+```python
+from mgqpy import Query
+
+query = Query({"$or": [{"ok": True}, {"x": {"$gt": {"a": 1}}}]})
+assert query.test({"ok": True, "x": {"a": "z"}}) is True
+query.test({"ok": False, "x": {"a": "z"}})  # TypeError: comparison is reached.
 ```
 
 ## Regex subset and trust boundary
@@ -124,10 +182,8 @@ Traversal and value comparison otherwise retain the 0.9.0 behaviour. Known
 differences remain for nested/mixed arrays, BSON container ordering, bool/number
 equality, embedded-document key order, NaN equality, `$all`, and the scope of
 date/Decimal/UUID conversions. These are not MongoDB-conformance guarantees.
-Until comparisons are reworked, a type/value/arithmetic/recursion error during
-evaluation makes the **whole document a non-match**, including under negation
-or within `$or`; other branches are not guaranteed to rescue it. This avoids
-crashes but can differ from MongoDB's result for valid container range queries.
+In particular, valid container range queries can raise `TypeError` instead of
+following MongoDB's BSON ordering; see the evaluation-error examples above.
 
 ## Supported operators
 

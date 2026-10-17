@@ -23,6 +23,8 @@ def _path_exists(doc, path: List[str]) -> bool:
     if isinstance(doc, list):
         if is_array_index(key) and int(key) < len(doc) and _path_exists(doc[int(key)], rest):
             return True
-        return any(_path_exists(d, path) for d in doc if isinstance(d, dict))
+        for d in doc:
+            if isinstance(d, dict) and _path_exists(d, path):
+                return True
 
     return False

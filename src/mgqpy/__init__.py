@@ -24,7 +24,6 @@
 from copy import deepcopy
 import math
 import re
-from typing import List
 
 from .operators.and_or_nor import _match_and, _match_or, _match_nor, _validate_query_ops
 from .operators.all import _match_all, _validate_all, _is_all_elem_match
@@ -80,25 +79,18 @@ class Query:
     def test(self, doc) -> bool:
         if not isinstance(doc, dict):
             raise TypeError("document must be a dict")
-        try:
-            return _match_cond(self._query, doc)
-        except (TypeError, ValueError, ArithmeticError, RecursionError):
-            # Interim policy until container comparisons and traversal are reworked:
-            # an unevaluable document is a non-match, including under negation.
-            return False
+        return _match_cond(self._query, doc)
 
 
 def _match_cond(query, doc):
-    results: List[bool] = []
-
     for path in query:
         if path in query_ops:
-            if path == "$and":
-                results.append(_match_and(doc, path, query["$and"]))
-            if path == "$or":
-                results.append(_match_or(doc, path, query["$or"]))
-            if path == "$nor":
-                results.append(_match_nor(doc, path, query["$nor"]))
+            if path == "$and" and not _match_and(doc, path, query["$and"]):
+                return False
+            if path == "$or" and not _match_or(doc, path, query["$or"]):
+                return False
+            if path == "$nor" and not _match_nor(doc, path, query["$nor"]):
+                return False
         else:
             exp_or_ov = query[path]
             is_all_exp = _check_all_exp(exp_or_ov)
@@ -106,43 +98,42 @@ def _match_cond(query, doc):
 
             if is_all_exp:
                 exp = exp_or_ov
-                if "$eq" in exp:
-                    results.append(_match_eq(doc, path_parts, exp["$eq"]))
-                if "$ne" in exp:
-                    results.append(_match_ne(doc, path_parts, exp["$ne"]))
-                if "$gt" in exp:
-                    results.append(_match_gt(doc, path_parts, exp["$gt"]))
-                if "$gte" in exp:
-                    results.append(_match_gte(doc, path_parts, exp["$gte"]))
-                if "$lt" in exp:
-                    results.append(_match_lt(doc, path_parts, exp["$lt"]))
-                if "$lte" in exp:
-                    results.append(_match_lte(doc, path_parts, exp["$lte"]))
-                if "$in" in exp:
-                    results.append(_match_in(doc, path_parts, exp["$in"]))
-                if "$nin" in exp:
-                    results.append(_match_nin(doc, path_parts, exp["$nin"]))
-                if "$not" in exp:
-                    results.append(_match_not(doc, path, exp["$not"]))
-                if "$regex" in exp:
-                    results.append(_match_regex(doc, path_parts, exp["$regex"]))
-                if "$mod" in exp:
-                    results.append(_match_mod(doc, path_parts, exp["$mod"]))
-                if "$all" in exp:
-                    results.append(_match_all(doc, path_parts, exp["$all"]))
-                if "$elemMatch" in exp:
-                    results.append(
-                        _match_elem_match(doc, path_parts, exp["$elemMatch"])
-                    )
-                if "$size" in exp:
-                    results.append(_match_size(doc, path_parts, exp["$size"]))
-                if "$exists" in exp:
-                    results.append(_match_exists(doc, path_parts, exp["$exists"]))
+                if "$eq" in exp and not _match_eq(doc, path_parts, exp["$eq"]):
+                    return False
+                if "$ne" in exp and not _match_ne(doc, path_parts, exp["$ne"]):
+                    return False
+                if "$gt" in exp and not _match_gt(doc, path_parts, exp["$gt"]):
+                    return False
+                if "$gte" in exp and not _match_gte(doc, path_parts, exp["$gte"]):
+                    return False
+                if "$lt" in exp and not _match_lt(doc, path_parts, exp["$lt"]):
+                    return False
+                if "$lte" in exp and not _match_lte(doc, path_parts, exp["$lte"]):
+                    return False
+                if "$in" in exp and not _match_in(doc, path_parts, exp["$in"]):
+                    return False
+                if "$nin" in exp and not _match_nin(doc, path_parts, exp["$nin"]):
+                    return False
+                if "$not" in exp and not _match_not(doc, path, exp["$not"]):
+                    return False
+                if "$regex" in exp and not _match_regex(doc, path_parts, exp["$regex"]):
+                    return False
+                if "$mod" in exp and not _match_mod(doc, path_parts, exp["$mod"]):
+                    return False
+                if "$all" in exp and not _match_all(doc, path_parts, exp["$all"]):
+                    return False
+                if "$elemMatch" in exp and not _match_elem_match(doc, path_parts, exp["$elemMatch"]):
+                    return False
+                if "$size" in exp and not _match_size(doc, path_parts, exp["$size"]):
+                    return False
+                if "$exists" in exp and not _match_exists(doc, path_parts, exp["$exists"]):
+                    return False
             else:
                 ov = exp_or_ov
-                results.append(_match_eq(doc, path_parts, ov))
+                if not _match_eq(doc, path_parts, ov):
+                    return False
 
-    return all(results)
+    return True
 
 
 def _validate(query):

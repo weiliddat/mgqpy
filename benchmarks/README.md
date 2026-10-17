@@ -15,7 +15,9 @@ uses Python's warm regex cache. Flat equality, a five-segment dict path, 100
 subdocuments, a 1,000-member `$in`, explicit regex, and combined `$and`/`$or` each
 have both measurements. Additional cases cover single-/two-digit indexed paths,
 scalar/deep `$size`, and scalar/deep/100-value-array `$mod`, also with construction
-timings. Dataset definitions live in `test_benchmarks.py`.
+timings. Array `$mod` has both an early match and a last-element match to measure
+short-circuiting separately from full-scan cost. Dataset definitions live in
+`test_benchmarks.py`.
 
 ## 0.9.0 versus the initial v1 base
 
@@ -101,8 +103,9 @@ third comprehension closure cell on Python 3.10/3.11. Those cells were allocated
 even on scalar calls. Positional recursion and explicit eager array loops remove
 that cost; `test()` also no longer wraps the matcher's boolean result in `bool()`.
 The revised four matching workloads are 2–8% faster than 0.9.0 in this run.
-Arrays still evaluate every element before `any()`, preserving evaluation order
-and the whole-document non-match policy on evaluation errors.
+At this stage arrays still evaluated every element before `any()`, preserving
+the then-current whole-document non-match policy on evaluation errors. The final
+short-circuit evaluation contract below supersedes that policy.
 
 Construction now copies built-in query containers while checking their keys in
 the same walk, sharing only immutable scalars. Other native values and container
@@ -171,11 +174,77 @@ prepared regex (original literal plus ASCII matcher) from an explicit literal
 regex, so it needs no recursive regex-mode flag. It also uses a direct empty-path
 check and no longer rechecks validated query key types. The canonical index helper
 has a bounded 128-entry cache of boolean results for repeated path segments.
-Traversal semantics and eager array evaluation are unchanged; no path cache or
-new traversal representation is introduced.
+This comparison retained eager array evaluation; no path cache or new traversal
+representation was introduced.
 
 The expanded pytest-benchmark suite passes all 26 matching/construction cases.
 A separate short run on Python 3.11 measured construction at 207 µs for large
 `$in`, 4.917 µs for `$mod`, 2.585 µs for `$size`, and 3.477 µs for regex, using
 `--benchmark-min-rounds=5 --benchmark-max-time=0.1 --benchmark-disable-gc`.
 The snapshot copier is unchanged.
+
+## Short-circuit evaluation: strategy comparison and final baseline
+
+The final [evaluation contract](../README.md#evaluation-contract) propagates
+reached errors and stops when an operator's result is decided. Rerun on the same
+orb and four interpreters, with the same 20-block interleaved methodology above.
+Three independent imports of the final source compared only the array/logical
+aggregation approach: eager result-list loops, generators with `any()`/`all()`,
+and early-return loops. A temporary AST import loader replaced the 25 simple
+early-return loops in matchers with the other two forms; construction, numeric
+preparation, comparison guards, and the early-return condition dispatcher were
+identical. The original 0.9.0 source was imported separately as a fourth variant.
+Every timed predicate returned the expected result before measurement.
+
+**Python 3.11 medians, in microseconds:**
+
+| Matching | 0.9.0 | Eager loops | Generators | Early-return loops |
+| --- | ---: | ---: | ---: | ---: |
+| Flat equality | 1.405 | 1.147 | 1.216 | 1.152 |
+| Deep dict path | 2.310 | 1.805 | 2.029 | 1.804 |
+| Arrays of subdocuments | 93.394 | 82.694 | 67.479 | 58.964 |
+| Large `$in` | 668.589 | 615.684 | 657.216 | 618.541 |
+| Regex | 2.258 | 1.149 | 1.218 | 1.161 |
+| `$and`/`$or` | 6.891 | 4.715 | 6.053 | 4.651 |
+| Indexed equality | 2.056 | 1.747 | 1.920 | 1.747 |
+| Two-digit index | 2.082 | 1.766 | 1.925 | 1.742 |
+| `$size` | 1.821 | 0.903 | 0.973 | 0.897 |
+| Deep `$size` | 3.604 | 1.556 | 1.840 | 1.562 |
+| `$mod` | 2.668 | 1.458 | 1.529 | 1.458 |
+| Deep `$mod` | 5.268 | 2.203 | 2.379 | 2.176 |
+| Array `$mod`, second value matches | 94.181 | 56.802 | 3.082 | 2.169 |
+| Array `$mod`, 100th value matches | 93.362 | 54.351 | 62.666 | 51.947 |
+
+Early-return loops avoid generator/frame and result-list overhead. On scalar
+workloads they are essentially tied with eager loops; generators add closure
+overhead even on calls that never enter an array. Eager evaluation is also
+incompatible with the new short-circuit contract. The array `$mod` early-match
+speedup is mostly skipped work; the last-element control shows the full-scan
+improvement separately. Large `$in` matches its final (1,000th) operand.
+
+Ratios of **final early-return loops / 0.9.0**, lower is faster:
+
+| Matching | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 |
+| --- | ---: | ---: | ---: | ---: |
+| Flat equality | 0.797× | 0.820× | 0.897× | 0.910× |
+| Deep dict path | 0.807× | 0.781× | 0.928× | 0.912× |
+| Arrays of subdocuments | 0.616× | 0.631× | 0.688× | 0.704× |
+| Large `$in` | 0.882× | 0.925× | 0.986× | 0.971× |
+| Regex | N/A | 0.514× | 0.535× | 0.552× |
+| `$and`/`$or` | 0.754× | 0.675× | 0.694× | 0.754× |
+| Indexed equality | 0.846× | 0.850× | 0.938× | 0.944× |
+| Two-digit index | 0.866× | 0.837× | 0.963× | 0.949× |
+| `$size` | 0.508× | 0.492× | 0.543× | 0.471× |
+| Deep `$size` | 0.479× | 0.434× | 0.457× | 0.469× |
+| `$mod` | 0.617× | 0.546× | 0.577× | 0.547× |
+| Deep `$mod` | 0.505× | 0.413× | 0.446× | 0.437× |
+| Array `$mod`, early match | 0.028× | 0.023× | 0.026× | 0.025× |
+| Array `$mod`, last match | 0.641× | 0.556× | 0.621× | 0.670× |
+
+No measured matching regression against 0.9.0 on any interpreter. The Python
+3.10 regex baseline still fails with `re.NOFLAG`; the final source matches at
+1.537 µs. These are shared-orb medians, not universal guarantees or CI thresholds.
+The final opt-in suite passes all 28 cases. A short Python 3.11 run with the same
+pytest-benchmark flags as above measured construction at 206.312 µs for large
+`$in`, 4.481 µs for `$mod`, 2.523 µs for `$size`, and 3.318 µs for regex.
+Construction and the snapshot copier are unchanged by the evaluation-policy fix.

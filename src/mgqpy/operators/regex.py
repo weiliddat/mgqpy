@@ -37,8 +37,10 @@ def _compile_regex(pattern, options=""):
 
 def _match_regex(doc, path: List[str], ov) -> bool:
     if len(path) == 0:
-        if isinstance(doc, list) and any([_match_regex(d, path, ov) for d in doc]):
-            return True
+        if isinstance(doc, list):
+            for d in doc:
+                if _match_regex(d, path, ov):
+                    return True
 
         if not isinstance(doc, str):
             return False
@@ -57,6 +59,8 @@ def _match_regex(doc, path: List[str], ov) -> bool:
             return _match_regex(doc[idx], rest, ov)
 
     if isinstance(doc, list):
-        return any([_match_regex(d, path, ov) for d in doc])
+        for d in doc:
+            if _match_regex(d, path, ov):
+                return True
 
     return False

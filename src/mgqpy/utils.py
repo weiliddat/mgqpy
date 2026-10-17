@@ -23,6 +23,16 @@ def is_finite_number(value) -> bool:
     )
 
 
+def in_same_type_bracket(a, b) -> bool:
+    """Skip incompatible scalar types, without suppressing comparison errors."""
+    return a is not None and b is not None and (
+        isinstance(a, type(b))
+        or isinstance(b, type(a))
+        or (isinstance(a, Number) and isinstance(b, Number))
+        or (isinstance(a, (bytes, bytearray)) and isinstance(b, (bytes, bytearray)))
+    )
+
+
 def coerce(a: Any, b: Any) -> tuple[Any, Any]:
     """Make *a* and *b* directly comparable by aligning their types.
 

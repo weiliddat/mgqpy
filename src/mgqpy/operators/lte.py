@@ -1,15 +1,16 @@
 import operator
 from itertools import zip_longest
-from numbers import Number
 from typing import List
 
-from mgqpy.utils import coerce, is_array_index
+from mgqpy.utils import coerce, in_same_type_bracket, is_array_index
 
 
 def _match_lte(doc, path: List[str], ov) -> bool:
     if len(path) == 0:
-        if isinstance(doc, list) and any([_match_lte(d, path, ov) for d in doc]):
-            return True
+        if isinstance(doc, list):
+            for d in doc:
+                if _match_lte(d, path, ov):
+                    return True
 
         if isinstance(doc, list) and isinstance(ov, list):
             if doc <= ov:
@@ -37,13 +38,8 @@ def _match_lte(doc, path: List[str], ov) -> bool:
         if doc is None and ov is None:
             return True
 
-        try:
-            doc, ov = coerce(doc, ov)
-            return operator.le(doc, ov)
-        except Exception:
-            pass
-
-        return False
+        doc, ov = coerce(doc, ov)
+        return in_same_type_bracket(doc, ov) and operator.le(doc, ov)
 
     key = path[0]
     rest = path[1:]
@@ -57,7 +53,10 @@ def _match_lte(doc, path: List[str], ov) -> bool:
             return _match_lte(doc[idx], rest, ov)
 
     if isinstance(doc, list):
-        return any([_match_lte(d, path, ov) for d in doc])
+        for d in doc:
+            if _match_lte(d, path, ov):
+                return True
+        return False
 
     if ov is None:
         return True

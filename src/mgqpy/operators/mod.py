@@ -6,8 +6,10 @@ from mgqpy.utils import is_array_index, is_finite_number
 
 def _match_mod(doc, path: List[str], ov) -> bool:
     if len(path) == 0:
-        if isinstance(doc, list) and any([_match_mod(d, path, ov) for d in doc]):
-            return True
+        if isinstance(doc, list):
+            for d in doc:
+                if _match_mod(d, path, ov):
+                    return True
 
         if not is_finite_number(doc):
             return False
@@ -33,7 +35,9 @@ def _match_mod(doc, path: List[str], ov) -> bool:
             return _match_mod(doc[idx], rest, ov)
 
     if isinstance(doc, list):
-        return any([_match_mod(d, path, ov) for d in doc])
+        for d in doc:
+            if _match_mod(d, path, ov):
+                return True
 
     return False
 

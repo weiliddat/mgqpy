@@ -31,6 +31,8 @@ def _match_elem_match(doc, path: List[str], ov) -> bool:
             return _match_elem_match(doc[idx], rest, ov)
 
     if isinstance(doc, list):
-        return any([_match_elem_match(d, path, ov) for d in doc])
+        for d in doc:
+            if _match_elem_match(d, path, ov):
+                return True
 
     return False

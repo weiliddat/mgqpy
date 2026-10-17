@@ -9,10 +9,15 @@ def _match_in(doc, path: List[str], ov) -> bool:
         return False
 
     if len(path) == 0:
-        if isinstance(doc, list) and any([_match_in(d, path, ov) for d in doc]):
-            return True
+        if isinstance(doc, list):
+            for d in doc:
+                if _match_in(d, path, ov):
+                    return True
 
-        return any([_match_eq(doc, path, o) for o in ov])
+        for o in ov:
+            if _match_eq(doc, path, o):
+                return True
+        return False
 
     key = path[0]
     rest = path[1:]
@@ -26,7 +31,10 @@ def _match_in(doc, path: List[str], ov) -> bool:
             return _match_in(doc[idx], rest, ov)
 
     if isinstance(doc, list):
-        return any([_match_in(d, path, ov) for d in doc])
+        for d in doc:
+            if _match_in(d, path, ov):
+                return True
+        return False
 
     if None in ov:
         return True
