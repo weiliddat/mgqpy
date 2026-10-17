@@ -15,45 +15,22 @@ Python-native conversions and other known differences are documented below.
 pip install mgqpy
 ```
 
-## Development
-
-Install development dependencies with `uv sync --locked --dev`. Tests compare
-results against a disposable MongoDB on loopback port 27017. Outside an Amp orb,
-start MongoDB 7 with `docker compose up --detach --wait`, then run `uv run pytest`.
-To use MongoDB 8, stop Compose first and run
-`MONGODB_VERSION=8 docker compose up --detach --wait`.
-Set `MONGODB_URI` to test another disposable local server. Tests create a unique
-database per run/worker and collection per case, clean up only their namespaces,
-and close the client. CI tests Python 3.10–3.13 against MongoDB 7 and 8, including
-an isolated installed-wheel smoke test.
-
-Correctness tests do not run benchmarks. Run `uv run pytest benchmarks` explicitly
-for CPU-only matching and construction benchmarks; see [the baseline](benchmarks/README.md).
-
-Amp orbs use `.agents/setup` to install the locked Python dependencies and a
-native MongoDB 7 server into the reusable project snapshot. `.agents/resume`
-ensures the supervised MongoDB service is running after activation and wake;
-it does not reinstall dependencies. MongoDB listens only on loopback, requires
-no credentials, and stores disposable test data in `.amp/mongo/`.
-Use `amp orb services ensure` to start or repair it manually and
-`amp orb service logs mongo` to inspect its logs.
+Upgrading from 0.9.0? Read the [migration notes](MIGRATING.md) and
+[1.0.0 changelog](CHANGELOG.md#100).
 
 ## Usage
 
-Test if an input satisfies a query.
+Compile once, test many: `Query(query)` deep-copies and validates the query and
+compiles its regex patterns and field paths. Reuse `Query` objects: construction
+is the up-front cost, not part of each match. Mutating the original query
+afterward does not change the predicate.
+Invalid queries raise `InvalidQuery` at construction. `test(document)` returns
+a bool on success and raises reached evaluation errors, rather than treating
+them as non-matches. See the [evaluation contract](#evaluation-contract).
 
-`Query(query)` deep-copies and validates the entire query and compiles its regex
-patterns and field paths.
-Reuse `Query` objects: construction is the up-front cost, not part of each match.
-Invalid or unsupported queries raise `InvalidQuery`, a `ValueError`
-subclass, at construction—even inside `$not`, `$nor`, or an unused logical branch.
-Mutating the original query afterward does not change the predicate.
-There is no separate `validate()` method: replace `Query(q).validate()` with `Query(q)`.
-
-For a valid query, `test(document)` returns `True` or `False` when evaluation
-succeeds, and raises the original exception if evaluation fails. Documents must
-be dicts; other inputs raise `TypeError`. Unsupported operators (for example
-`$type`) are rejected.
+The public API is exactly `Query` and `InvalidQuery`, imported from `mgqpy`.
+The former `mgqpy.utils.coerce` helper is removed; native conversion is part of
+matching, including within containers.
 
 ```python
 from mgqpy import Query
@@ -89,8 +66,12 @@ except InvalidQuery as error:
 ## Evaluation contract
 
 - `Query(query)` copies and validates the entire query up front. Invalid or
-  unsupported queries raise `InvalidQuery`, even in branches evaluation might skip.
+  unsupported queries raise `InvalidQuery` (a `ValueError` subclass), even in
+  branches evaluation might skip. There is no separate `validate()` method.
+  Unsupported operators include `$type`. Both document-form and value-form
+  `$elemMatch` are supported.
 - `test(document)` returns `True` or `False` for a valid query if evaluation succeeds.
+  Documents must be dicts; other inputs raise `TypeError`.
 - Operators stop once the result is decided: array matching stops at a match,
   `$or` stops at a true branch, and `$and` stops at a false branch. This also applies
   to implicit conjunctions, membership operands, and negation. There is **no
@@ -201,7 +182,7 @@ This does not flatten recursively: `{"x.0.": 1}` still does not match
 
 Conditions on the same path can match different elements. `$all` requires each
 operand to match independently, even across different subdocuments reached by a
-path. It walks the path once and reuses reached leaf values for later requirements,
+path. With multiple requirements it walks the path once and reuses reached leaf values,
 stopping once every requirement has matched. It uses the same equality and regex rules
 as other matching; a single requirement can also match a scalar
 (`{"x": {"$all": [1]}}` matches `{"x": 1}`).
@@ -274,6 +255,9 @@ assert predicate.test({"x": [{"day": date(2024, 8, 1), "cost": [Decimal("3.14")]
 
 ## Known differences and limits
 
+See [#14](https://github.com/weiliddat/mgqpy/issues/14) for the remaining
+differences and open questions. These are not promises of future MongoDB parity.
+
 MongoDB does not perform these native/string conversions. `Decimal("0.1")`
 equals `0.1` here; BSON Decimal128 `0.1` sorts below the binary float in MongoDB.
 Python dates/datetimes retain their precision and Python comparison semantics:
@@ -290,10 +274,17 @@ Non-BSON partial orders (such as disjoint sets) can compare as ties inside conta
 There is no collation support. The regex subset and its trust boundary are
 described above. Numeric-path candidate order also differs from MongoDB, as
 noted in the evaluation contract.
+NUL characters in field keys are accepted here but cannot be encoded as BSON keys.
+
+Ordinary `Query` instances support pickling and process-pool use within the same
+version. Rebuild queries from their source after upgrading; cross-version pickles
+are not supported. Extra instance attributes are not preserved, and subclasses
+with extra constructor arguments need their own pickle protocol.
 
 `$mod` truncates numeric operands and document values toward zero and gives the
 remainder the dividend's sign. Like MongoDB, it requires signed 64-bit-convertible
-operands; booleans, non-finite values, and out-of-range document numbers do not match.
+operands; invalid query operands raise `InvalidQuery`. Booleans, non-finite values,
+and out-of-range document numbers do not match.
 `$size` requires a finite integral number in `0..2147483647` (including `2.0`).
 
 ## Supported operators
@@ -333,3 +324,26 @@ Array query operators
 - [x] \$all
 - [x] \$elemMatch
 - [x] \$size
+
+## Development
+
+Install development dependencies with `uv sync --locked --dev`. Tests compare
+results against a disposable MongoDB on loopback port 27017. Outside an Amp orb,
+start MongoDB 7 with `docker compose up --detach --wait`, then run `uv run pytest`.
+To use MongoDB 8, stop Compose first and run
+`MONGODB_VERSION=8 docker compose up --detach --wait`.
+Set `MONGODB_URI` to test another disposable local server. Tests create a unique
+database per run/worker and collection per case, clean up only their namespaces,
+and close the client. CI tests Python 3.10–3.13 against MongoDB 7 and 8, including
+an isolated installed-wheel smoke test.
+
+Correctness tests do not run benchmarks. Run `uv run pytest benchmarks` explicitly
+for CPU-only matching and construction benchmarks; see [the baseline](benchmarks/README.md).
+
+Amp orbs use `.agents/setup` to install the locked Python dependencies and a
+native MongoDB 7 server into the reusable project snapshot. `.agents/resume`
+ensures the supervised MongoDB service is running after activation and wake;
+it does not reinstall dependencies. MongoDB listens only on loopback, requires
+no credentials, and stores disposable test data in `.amp/mongo/`.
+Use `amp orb services ensure` to start or repair it manually and
+`amp orb service logs mongo` to inspect its logs.
