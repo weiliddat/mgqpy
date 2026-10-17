@@ -407,10 +407,11 @@ document/binary ranges with 100-value last-hit and all-miss arrays, date/UUID
 last-hit and all-miss arrays, and numeric/string `$all` prefix hits in 10,000- and
 100,000-value arrays, including shifted prefixes and reversed requirements.
 
-The gate excludes inherited A traversal costs (late/missing `$size` and `$exists`,
-and indexed misses), which B does not change. For example, Python 3.11 indexed
-misses take 2.277 → 23.307 µs because numeric-field alternatives require scanning
-subdocuments; the A section explains why.
+The gate excludes traversal costs inherited from `v1-paths` (late/missing `$size`
+and `$exists`, and indexed misses), which `v1-values` does not change. For example,
+Python 3.11 indexed misses take 2.277 → 23.307 µs because numeric-field alternatives
+require scanning subdocuments; [Shared compiled traversal](#shared-compiled-traversal)
+explains why.
 
 The original 55-workload subset remains faster than both baselines. In the
 expanded gate, comparison/native controls also meet `v1-base`, with two accepted
