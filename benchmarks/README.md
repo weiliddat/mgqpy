@@ -333,18 +333,18 @@ Worst matching ratio across the **55 existing matching workloads and controls**
 
 | Python | Paths / 0.9.0 | Paths / v1-base |
 | --- | ---: | ---: |
-| 3.10.21 | 0.510× | 0.857× |
-| 3.11.6 | 0.492× | 0.878× |
-| 3.12.14 | 0.537× | 0.893× |
-| 3.13.15 | 0.540× | 0.917× |
+| 3.10.21 | 0.515× | 0.862× |
+| 3.11.6 | 0.483× | 0.888× |
+| 3.12.14 | 0.518× | 0.875× |
+| 3.13.15 | 0.515× | 0.882× |
 
 0.9.0's Python 3.10 explicit regex still raises, leaving 54 comparable cases
 there. Numeric equality avoids native coercion when both values are exact
 built-in numbers; integer precision and the base's equality semantics remain
 unchanged. Compilation removes the matching-time expression dispatcher, path
-splits, slices and index classification. Python 3.11 medians are 0.512 µs (flat),
-0.959 µs (deep), 26.591 µs (subdocuments), 120.454 µs (large `$in`), 0.700 µs
-(regex), and 1.611 µs (logical composition). These are shared-orb observations,
+splits, slices and index classification. Python 3.11 medians are 0.515 µs (flat),
+0.937 µs (deep), 25.359 µs (subdocuments), 110.949 µs (large `$in`), 0.682 µs
+(regex), and 1.621 µs (logical composition). These are shared-orb observations,
 not universal performance guarantees.
 
 The opt-in suite now has 83 cases. New cases cover early/last/missing matches
@@ -352,11 +352,17 @@ through 100 subdocuments for equality, membership, existence, size, all and
 elemMatch, plus numeric-field alternatives, indexed misses, scalar-array/null
 and nested-leaf controls. Correct indexed misses now search literal numeric
 fields in every immediate subdocument: `x.73.y` against 100 `{"y": 0}` objects
-takes 23.122 µs on Python 3.11 versus 1.899 µs in the base. This is necessary
+takes 22.798 µs on Python 3.11 versus 1.870 µs in the base. This is necessary
 additional work, absent from the old indexed-hit benchmarks; successful indexed
 matching still returns before searching alternatives. The new last-hit existence
 case can also cost more than the old dedicated existence walker. These costs
 are reported separately from the existing-workload gate.
+
+These results include the review fix that normalizes the final result with
+`bool()` in `Query.test()`, rather than individual leaf matchers. Custom Python
+comparisons can return non-booleans, so the public contract needs this boundary.
+Pickle reconstruction recompiles the private query snapshot; it adds no work to
+matching and preserves process-pool use.
 
 Construction remains separately measured by `test_construct`; compilation
 intentionally moves work out of repeated matching. Correctness and installed-

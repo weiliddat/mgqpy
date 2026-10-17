@@ -10,7 +10,7 @@ def _match_eq(value, operand) -> bool:
         return operand is None
     if isinstance(operand, _Regex):
         if isinstance(value, str):
-            return bool(operand.matcher.search(value))
+            return operand.matcher.search(value)
         operand = operand.literal
     value, operand = coerce(value, operand)
-    return bool(value == operand)
+    return value == operand

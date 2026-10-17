@@ -34,4 +34,4 @@ def _compile_regex(pattern, options=""):
 
 
 def _match_regex(value, operand) -> bool:
-    return isinstance(value, str) and bool(operand.matcher.search(value))
+    return isinstance(value, str) and operand.matcher.search(value)

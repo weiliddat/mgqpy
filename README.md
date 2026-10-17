@@ -177,6 +177,8 @@ immediate elements and the whole array; an explicit terminal index offers only
 the selected value. Numeric segments also search literal fields in immediate
 subdocuments, so `{"x.0": 1}` matches `{"x": [{"0": 1}]}`.
 
+Trailing-empty path segments (such as `x.`) can differ from MongoDB 7/8.
+
 Value comparison otherwise retains the 0.9.0 behaviour. Known differences remain
 for BSON container ordering, bool/number equality, embedded-document key order,
 NaN equality, `$all`, and the scope of date/Decimal/UUID conversions.

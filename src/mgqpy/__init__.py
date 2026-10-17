@@ -58,14 +58,19 @@ class InvalidQuery(ValueError):
 class Query:
     def __init__(self, query: dict[str, Any]):
         try:
-            self._match = _compile_query(_copy_query(query))
+            self._query = _copy_query(query)
+            self._match = _compile_query(self._query)
         except (TypeError, ValueError, ArithmeticError, RecursionError) as error:
             raise InvalidQuery(str(error)) from error
+
+    def __reduce__(self):
+        # Local compiled closures are rebuilt from the isolated source snapshot.
+        return type(self), (self._query,)
 
     def test(self, doc: dict[str, Any]) -> bool:
         if not isinstance(doc, dict):
             raise TypeError("document must be a dict")
-        return self._match(doc)
+        return bool(self._match(doc))
 
 
 def _compile_query(query, location="query"):
@@ -84,7 +89,7 @@ def _compile_query(query, location="query"):
                 predicate = conjunction(children) if path == "$and" else disjunction(children)
                 predicates.append(negate(predicate) if path == "$nor" else predicate)
             else:
-                value = _validate_expression(value)
+                value = _validate_expression(value, here)
                 predicates.append(_compile_expression(compile_path(path), value))
         except (TypeError, ValueError, ArithmeticError, RecursionError) as error:
             raise ValueError(f"{here}: {error}") from error
@@ -130,7 +135,7 @@ def _compile_expression(parts, value):
     return conjunction(tuple(predicates))
 
 
-def _validate_expression(value):
+def _validate_expression(value, location):
     if isinstance(value, re.Pattern):
         return _compile_regex(value)
     # As in MongoDB, the first key distinguishes an expression from a literal.
@@ -155,14 +160,14 @@ def _validate_expression(value):
             isinstance(child, dict) and child and next(iter(child)).startswith("$")
         ):
             raise TypeError("$not requires a regex or a nonempty operator expression")
-        value["$not"] = _validate_expression(child)
+        value["$not"] = _validate_expression(child, f"{location}.$not")
     if "$elemMatch" in value:
         child = value["$elemMatch"]
         if not isinstance(child, dict):
             raise TypeError("$elemMatch operator value must be a dict")
         if any(key.startswith("$") and key not in query_ops for key in child):
             raise TypeError("$elemMatch with operators on values is not supported")
-        value["$elemMatch"] = _compile_query(child)
+        value["$elemMatch"] = _compile_query(child, f"{location}.$elemMatch")
     for op in ("$in", "$nin", "$all"):
         if op not in value:
             continue
@@ -174,7 +179,7 @@ def _validate_expression(value):
             if _check_all_exp(operand):
                 if op != "$all" or set(operand) != {"$elemMatch"}:
                     raise TypeError(f"{op} does not accept operator expressions here")
-                operands[i] = _validate_expression(operand)
+                operands[i] = _validate_expression(operand, f"{location}.{op}[{i}]")
             elif isinstance(operand, re.Pattern) and op != "$all":
                 operands[i] = _compile_regex(operand)
         if op == "$all":

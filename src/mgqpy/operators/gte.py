@@ -26,4 +26,4 @@ def _match_gte(doc, ov) -> bool:
     if doc is None and ov is None:
         return True
     doc, ov = coerce(doc, ov)
-    return in_same_type_bracket(doc, ov) and bool(operator.ge(doc, ov))
+    return in_same_type_bracket(doc, ov) and operator.ge(doc, ov)

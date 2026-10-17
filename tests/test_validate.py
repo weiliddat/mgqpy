@@ -1,6 +1,9 @@
+import pickle
 import re
 from collections import OrderedDict
+from concurrent.futures import ProcessPoolExecutor
 from decimal import Decimal, InvalidOperation
+from multiprocessing import get_context
 
 import pytest
 from pymongo.errors import OperationFailure
@@ -91,6 +94,41 @@ def test_invalid_python_queries_and_unsupported_features(query):
 ])
 def test_valid_construction(query):
     assert type(Query(query).test({})) is bool
+
+
+@pytest.mark.parametrize("query,document,expected", [
+    ({}, {}, True),
+    ({"x": 1}, {"x": 1}, True),
+    ({"x": 1}, {"x": 2}, False),
+    ({"$or": [{"x": 1}, {"x": {"$regex": "^a", "$options": "i"}}]}, {"x": "ABC"}, True),
+    ({"x": {"$not": re.compile("^a")}}, {"x": "abc"}, False),
+    ({"x": {"$all": [{"$elemMatch": {"a": {"$in": [1, 2]}}}]}}, {"x": [{"a": 2}]}, True),
+])
+def test_pickle_round_trip(query, document, expected):
+    predicate = Query(query)
+    query.clear()
+    restored = pickle.loads(pickle.dumps(predicate))
+    assert restored.test(document) is expected
+
+
+def test_predicate_can_be_submitted_to_a_process_pool():
+    predicate = Query({"x": {"$in": [1, 2]}})
+    with ProcessPoolExecutor(max_workers=1, mp_context=get_context("spawn")) as pool:
+        assert list(pool.map(predicate.test, [{"x": 1}, {"x": 3}])) == [True, False]
+
+
+@pytest.mark.parametrize("query,location", [
+    ({"items": {"$elemMatch": {"x": {"$typo": 1}}}}, "query.items.$elemMatch.x"),
+    ({"items": {"$all": [{"$elemMatch": {"x": 1}}, {"$elemMatch": {"x": {"$typo": 1}}}]}},
+     "query.items.$all[1].$elemMatch.x"),
+    ({"items": {"$not": {"$elemMatch": {"x": {"$typo": 1}}}}}, "query.items.$not.$elemMatch.x"),
+    ({"$or": [{}, {"items": {"$elemMatch": {"$and": [{"x": {"$typo": 1}}]}}}]},
+     "query.$or[1].items.$elemMatch.$and[0].x"),
+])
+def test_invalid_nested_query_names_its_location(query, location):
+    with pytest.raises(InvalidQuery) as caught:
+        Query(query)
+    assert f"{location}: unknown operator: $typo" in str(caught.value)
 
 
 def test_query_owns_a_deep_snapshot():
@@ -244,3 +282,36 @@ def test_successful_evaluation_returns_a_bool():
 
     for op in ("$eq", "$gt", "$gte", "$lt", "$lte"):
         assert Query({"x": {op: 0}}).test({"x": TruthyNumber(1)}) is True
+
+
+@pytest.mark.parametrize("op,key,expected", [
+    ("$gt", "z", True), ("$gt", "a", False),
+    ("$gte", "z", True), ("$gte", "a", False),
+    ("$lt", "a", True), ("$lt", "z", False),
+    ("$lte", "a", True), ("$lte", "z", False),
+])
+def test_dict_key_comparison_normalizes_truth_and_propagates_errors(op, key, expected):
+    error = RuntimeError("truth conversion failed")
+
+    class Verdict:
+        def __bool__(self):
+            raise error
+
+    class Key(str):
+        fail = False
+
+        def __gt__(self, other):
+            return Verdict() if self.fail else [True] if super().__gt__(other) else []
+
+        def __lt__(self, other):
+            return Verdict() if self.fail else [True] if super().__lt__(other) else []
+
+    field = {"x": {op: {"m": 0}}}
+    doc = {"x": {Key(key): 0}}
+    for query in (field, {"$and": [field]}, {"$or": [field]}):
+        assert Query(query).test(doc) is expected
+        Key.fail = True
+        with pytest.raises(RuntimeError) as caught:
+            Query(query).test(doc)
+        assert caught.value is error
+        Key.fail = False

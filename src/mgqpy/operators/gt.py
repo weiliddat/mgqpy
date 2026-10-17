@@ -24,4 +24,4 @@ def _match_gt(doc, ov) -> bool:
     if doc is MISSING:
         return False
     doc, ov = coerce(doc, ov)
-    return in_same_type_bracket(doc, ov) and bool(operator.gt(doc, ov))
+    return in_same_type_bracket(doc, ov) and operator.gt(doc, ov)
