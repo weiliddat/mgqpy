@@ -31,6 +31,8 @@ CASES = [
     ("array-range", {"x": {"$gt": [1, 2]}}, {"x": [1, 3]}),
     ("document-range", {"x": {"$gt": {"a": 1}}}, {"x": {"a": 2}}),
     ("all", {"x": {"$all": [72, 73]}}, {"x": list(range(100))}),
+    ("all-string", {"x": {"$all": ["t72", "t73"]}},
+     {"x": [f"t{i}" for i in range(100)]}),
     ("date", {"x": "2024-08-01"}, {"x": date(2024, 8, 1)}),
     ("decimal", {"x": {"$gte": "3.14"}}, {"x": Decimal("3.14")}),
     ("uuid", {"x": "0123456789abcdef0123456789abcdef"},
@@ -87,6 +89,16 @@ for name, operand, hit, miss in (
         if position is not None:
             values[position] = hit
         MATCH_CASES.append((f"value-{name}-{position}", {"x": operand}, {"x": values}, position is not None))
+
+for name, first, second, miss in (("number", 72, 73, 0), ("string", "t72", "t73", "other")):
+    for position in (0, 98, None):
+        values = [miss] * 100
+        if position is None:
+            values[-1] = first
+        else:
+            values[position:position + 2] = [first, second]
+        MATCH_CASES.append((f"all-{name}-{position}", {"x": {"$all": [first, second]}},
+                            {"x": values}, position is not None))
 
 MATCH_CASES.extend([
     ("bool-not-number", {"x": 1}, {"x": True}, False),

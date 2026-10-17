@@ -174,8 +174,10 @@ arrays. Negation means no candidate matches, not that some candidate fails.
 
 Conditions on the same path can match different elements. `$all` requires each
 operand to match independently, even across different subdocuments reached by a
-path. It uses the same equality and regex rules as other matching; a single
-requirement can also match a scalar (`{"x": {"$all": [1]}}` matches `{"x": 1}`).
+path. It walks the path once and reuses reached leaf values for later requirements,
+stopping once every requirement has matched. It uses the same equality and regex rules
+as other matching; a single requirement can also match a scalar
+(`{"x": {"$all": [1]}}` matches `{"x": 1}`).
 Empty `$all` never matches. Use document-form `$elemMatch` when several conditions
 must hold on the **same element**. `$size` tests the whole leaf array, without
 adding the sizes of different candidates.
@@ -240,6 +242,8 @@ This is not a BSON implementation: driver-specific types such as ObjectId,
 Timestamp, MinKey/MaxKey, Decimal128 and Binary subtypes are not emulated.
 Use ordinary Python values; tuples, custom classes and other non-BSON values
 retain Python fallback behavior, not a MongoDB compatibility guarantee.
+When either scalar has no supported BSON type, equality and ranges use Python
+comparisons, including comparisons between custom base and subclass instances.
 There is no collation support. The regex subset and its trust boundary are
 described above. Numeric-path candidate order also differs from MongoDB, as
 noted in the evaluation contract.

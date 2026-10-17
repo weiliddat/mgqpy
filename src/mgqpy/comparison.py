@@ -24,7 +24,7 @@ def _kind(value):
     for cls, kind in _KINDS.items():
         if isinstance(value, cls):
             return kind
-    return 1 if isinstance(value, Number) else type(value)
+    return 1 if isinstance(value, Number) else None
 
 
 def _is_nan(value):
@@ -34,14 +34,24 @@ def _is_nan(value):
 
 
 def equal(a, b) -> bool:
-    if type(a) in (int, float) and type(b) in (int, float):
-        return a == b or (a != a and b != b)
-    if type(a) is str and type(b) is str:
-        return a == b
-    a, b = _coerce(a, b)
-    kind = _kind(a)
-    if kind != _kind(b):
-        return False
+    at, bt = type(a), type(b)
+    if at is bt:
+        if at in (int, str):
+            return a == b
+        if at is float:
+            return a == b or (a != a and b != b)
+        kind = _KINDS.get(at)
+        if kind is None:
+            kind = _kind(a)
+    else:
+        if at in (int, float) and bt in (int, float):
+            return a == b
+        a, b = _coerce(a, b)
+        kind, other = _kind(a), _kind(b)
+        if kind is None or other is None:
+            return a == b
+        if kind != other:
+            return False
     if kind == 1 and (_is_nan(a) or _is_nan(b)):
         return _is_nan(a) and _is_nan(b)
     if kind == 3:
@@ -71,6 +81,10 @@ def compare(a, b) -> int:
         return (a > b) - (a < b)
     a, b = _coerce(a, b)
     ak, bk = _kind(a), _kind(b)
+    if ak is None or bk is None:
+        if a > b:
+            return 1
+        return -1 if a < b else 0
     if ak != bk:
         return (ak > bk) - (ak < bk)
     if ak == 0:
@@ -81,7 +95,7 @@ def compare(a, b) -> int:
         for (an, av), (bn, bv) in zip(a.items(), b.items()):
             av, bv = _coerce(av, bv)
             at, bt = _kind(av), _kind(bv)
-            if at != bt:
+            if at is not None and bt is not None and at != bt:
                 return (at > bt) - (at < bt)
             if an != bn:
                 if an > bn:
@@ -111,8 +125,10 @@ def _range(value, operand, op, inclusive=False) -> bool:
     if value is MISSING:
         return inclusive and operand is None
     value, operand = _coerce(value, operand)
-    kind = _kind(value)
-    if kind != _kind(operand):
+    kind, other = _kind(value), _kind(operand)
+    if kind is None or other is None:
+        return op(value, operand)
+    if kind != other:
         return False
     # Mongo's direct ranges reject one-NaN comparisons. Container ordering
     # instead uses the total order in compare(), where NaN precedes -inf.

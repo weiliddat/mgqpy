@@ -28,6 +28,7 @@ import re
 from typing import Any
 
 from .comparison import _match_gt, _match_gte, _match_lt, _match_lte
+from .operators.all import compile_all
 from .operators.and_or_nor import conjunction, disjunction, negate
 from .operators.elem_match import _match_elem_match
 from .operators.eq_ne_not import _match_eq
@@ -113,7 +114,7 @@ _value_ops = {
 
 
 def _compile_expression(parts, value):
-    if not _check_all_exp(value):
+    if not _is_expression(value):
         return _field(parts, _match_eq, value)
     predicates = []
     for op, match in _value_ops.items():
@@ -125,9 +126,12 @@ def _compile_expression(parts, value):
         elif op == "$all" and not operand:
             predicate = disjunction(())
         elif op == "$all":
-            predicate = conjunction(tuple(_compile_expression(parts, child) for child in operand))
+            if _is_expression(operand[0]):
+                predicate = compile_all(parts, tuple(child["$elemMatch"] for child in operand), _match_elem_match)
+            else:
+                predicate = compile_all(parts, tuple(operand), _match_eq)
         else:
-            predicate = _field(parts, match, operand, op not in {"$all", "$elemMatch", "$size", "$exists"})
+            predicate = _field(parts, match, operand, op not in {"$elemMatch", "$size", "$exists"})
             if op in {"$ne", "$nin"}:
                 predicate = negate(predicate)
             if op == "$exists" and (operand is None or (isinstance(operand, Number) and operand == 0)):
@@ -140,7 +144,7 @@ def _validate_expression(value, location):
     if isinstance(value, re.Pattern):
         return _compile_regex(value)
     # As in MongoDB, the first key distinguishes an expression from a literal.
-    if not isinstance(value, dict) or not value or not next(iter(value)).startswith("$"):
+    if not _is_expression(value):
         return value
 
     # A caller can reuse a dict/list as both an expression and a literal operand.
@@ -157,9 +161,7 @@ def _validate_expression(value, location):
         value["$regex"] = _compile_regex(value["$regex"], value.pop("$options", ""))
     if "$not" in value:
         child = value["$not"]
-        if not isinstance(child, re.Pattern) and not (
-            isinstance(child, dict) and child and next(iter(child)).startswith("$")
-        ):
+        if not isinstance(child, re.Pattern) and not _is_expression(child):
             raise TypeError("$not requires a regex or a nonempty operator expression")
         value["$not"] = _validate_expression(child, f"{location}.$not")
     if "$elemMatch" in value:
@@ -177,15 +179,15 @@ def _validate_expression(value, location):
             raise TypeError(f"{op} operator value must be a list")
         operands = value[op] = operands.copy()
         for i, operand in enumerate(operands):
-            if _check_all_exp(operand):
+            if _is_expression(operand):
                 if op != "$all" or set(operand) != {"$elemMatch"}:
                     raise TypeError(f"{op} does not accept operator expressions here")
                 operands[i] = _validate_expression(operand, f"{location}.{op}[{i}]")
             elif isinstance(operand, re.Pattern):
                 operands[i] = _compile_regex(operand)
         if op == "$all":
-            has_elem_match = any(_check_all_exp(o) for o in operands)
-            if has_elem_match and not all(_check_all_exp(o) and set(o) == {"$elemMatch"} for o in operands):
+            has_elem_match = any(_is_expression(o) for o in operands)
+            if has_elem_match and not all(_is_expression(o) and set(o) == {"$elemMatch"} for o in operands):
                 raise TypeError("$all cannot mix $elemMatch with literal values")
     if "$mod" in value:
         if not _validate_mod(value["$mod"]):
@@ -230,9 +232,5 @@ def _validate_keys(value):
             _validate_keys(child)
 
 
-def _check_all_exp(exp_or_ov):
-    return (
-        exp_or_ov
-        and isinstance(exp_or_ov, dict)
-        and next(iter(exp_or_ov)).startswith("$")
-    )
+def _is_expression(value):
+    return isinstance(value, dict) and bool(value) and next(iter(value)).startswith("$")

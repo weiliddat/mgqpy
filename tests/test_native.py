@@ -112,3 +112,42 @@ def test_conversions_are_pairwise_not_global_normalization():
     assert Query({"x": utc}).test({"x": naive}) is False
     # Effective converted types precede field names in document ordering too.
     assert Query({"x": {"$gt": {"z": "2024-08-01"}}}).test({"x": {"a": date(2024, 9, 1)}}) is False
+
+
+class Wrapped:
+    def __init__(self, value):
+        self.value = value
+
+    def __eq__(self, other):
+        return self.value == getattr(other, "value", other)
+
+    def __lt__(self, other):
+        return self.value < getattr(other, "value", other)
+
+    def __gt__(self, other):
+        return self.value > getattr(other, "value", other)
+
+    def __le__(self, other):
+        return self.value <= getattr(other, "value", other)
+
+    def __ge__(self, other):
+        return self.value >= getattr(other, "value", other)
+
+
+class Child(Wrapped):
+    pass
+
+
+@pytest.mark.parametrize("value,operand,order", [
+    (Wrapped(1), 1, 0), (Child(2), Wrapped(1), 1), (Wrapped(0), Child(1), -1),
+])
+@pytest.mark.parametrize("shape", ["scalar", "document", "array"])
+def test_unclassified_values_keep_python_comparisons(value, operand, order, shape):
+    if shape == "document":
+        value, operand = {"a": value}, {"a": operand}
+    elif shape == "array":
+        value, operand = [value], [operand]
+    for a, b, sign in ((value, operand, order), (operand, value, -order)):
+        for op, orders in (("$eq", [0]), ("$ne", [-1, 1]), ("$gt", [1]),
+                           ("$gte", [0, 1]), ("$lt", [-1]), ("$lte", [-1, 0])):
+            assert Query({"x.0": {op: b}}).test({"x": [a]}) is (sign in orders)

@@ -133,6 +133,33 @@ def test_membership_operands_short_circuit():
         assert caught.value is BrokenNumber.error
 
 
+def test_all_replays_reached_values_without_reading_an_unneeded_tail():
+    error = RuntimeError("unreadable tail")
+    predicate = Query({"x.y": {"$all": [2, 1]}})
+    assert predicate.test({"x": BrokenTail([{"y": [1]}, {"y": [2]}], error)}) is True
+    with pytest.raises(RuntimeError) as caught:
+        predicate.test({"x": BrokenTail([{"y": [2]}], error)})
+    assert caught.value is error
+    assert predicate.test({"x": [{"y": [2]}]}) is False
+
+
+def test_unclassified_comparison_error_is_not_a_type_mismatch():
+    error = RuntimeError("custom comparison failed")
+
+    class Broken:
+        def __eq__(self, other):
+            raise error
+
+        __gt__ = __ge__ = __lt__ = __le__ = __eq__
+
+    for op in ("$eq", "$gt", "$gte", "$lt", "$lte"):
+        for value, operand in ((Broken(), 1), ({"a": Broken()}, {"a": 1}),
+                               ([Broken()], [1])):
+            with pytest.raises(RuntimeError) as caught:
+                Query({"x": {op: operand}}).test({"x": value})
+            assert caught.value is error
+
+
 @pytest.mark.parametrize("value,operand", [({"a": 1, "b": BrokenNumber(9)}, {"a": 0, "b": 0}),
                                           ([1, BrokenNumber(9)], [0, 0])])
 def test_container_comparison_stops_at_a_decisive_prefix(value, operand):

@@ -374,7 +374,7 @@ Construction remains separately measured by `test_construct`; compilation
 intentionally moves work out of repeated matching. Correctness and installed-
 wheel checks run separately from these CPU-only measurements.
 
-## Shared value comparison
+## Shared value comparison: initial measurement
 
 The value branch uses the same 24-block interleaved method, independent source
 imports and four serial interpreters described above. Its shared equality and
@@ -395,13 +395,13 @@ run. Python 3.11 medians are 0.601 µs (flat), 1.026 µs (deep), 32.023 µs
 (subdocuments), 199.609 µs (large `$in`), 0.685 µs (regex), and 1.783 µs
 (logical composition). These observations are not universal guarantees.
 
-The suite now has 120 cases. Added workloads cover ordered-document equality,
+This initial suite had 120 cases. Added workloads cover ordered-document equality,
 array/document ranges, `$all`, bool/number separation, NaN equality and direct/
 container ranges, scalar date/Decimal/UUID pairs, and early/last/missing string,
 array, document and native-container matches. Construction is timed separately.
 
-New coverage also exposes costs absent from the original gate. Python 3.11
-matching medians, in microseconds:
+Additional workloads exposed regressions even where all versions agree, not
+only the cost of corrected behavior. Python 3.11 matching medians, in microseconds:
 
 | Workload | v1-base | Values |
 | --- | ---: | ---: |
@@ -416,8 +416,78 @@ matching medians, in microseconds:
 
 Recursive equality replaces Python's C-level container equality/membership so
 it can distinguish bools, retain document key order, equate NaNs and convert
-native scalar pairs. `$all` applies that equality independently to each operand
-across path candidates. The added work is real; the original-workload gate does
-not imply a speedup for these cases. Native-container conversion has no correct
-old-version timing: both baselines return the wrong result, so they are excluded
-rather than reported as performance improvements.
+native scalar pairs. Repeated Python scans for `$all` are not required for these
+semantics; the recheck below replaces them. Native-container conversion has no
+correct old-version timing: both baselines return the wrong result, so they are
+excluded rather than reported as performance improvements.
+
+## Single-walk $all and equality fast paths
+
+`$all` now walks a path once, retaining reached leaves for later requirements.
+Requirements still run in order: a later requirement cannot raise before the
+preceding one succeeds, and a deciding match does not force the rest of the path.
+Ordinary leaf arrays use C-level membership after a type-only scan confirms
+that their values and the operands are exact built-in numbers/strings. Bools,
+NaN operands, native conversions, regexes and containers use shared equality.
+The scan is local to each evaluation; mutable documents are never cached.
+
+Equality avoids coercion and repeated type classification for exact same-type
+values, but still checks every document key in order and compares contents
+recursively. No alternate container equality or query-specific schema is compiled.
+
+Remeasured all 106 matching workloads plus nine controls on all four interpreters,
+using the same 24-block shuffled/interleaved method above. A fourth independent
+import of the [initial value branch](https://github.com/weiliddat/mgqpy/commit/0dd07708bc60302d66a3c36a5da5055ea402477c)
+provides the before comparison. Only variants that return the expected answer
+are timed. The expanded pytest-benchmark suite passes all 128 matching/construction
+cases. The benchmark table retains document equality's early/last/miss cases
+and adds numeric and string `$all` early/last/miss cases.
+
+Python 3.11 numeric/string `$all` improves from 31.420/32.384 to 3.871/4.356 µs.
+Last-of-100 document equality improves from 168.789 to 127.700 µs; recursive
+Python equality still costs more than the base's C-level container equality.
+
+Medians in microseconds, compared with the exact `v1-base` snapshot above:
+
+| Python | Numeric $all: base → new | String $all: base → new | Document equality, last: base → new |
+| --- | ---: | ---: | ---: |
+| 3.10.21 | 3.725 → 3.572 | 4.059 → 4.033 | 95.998 → 158.828 |
+| 3.11.6 | 3.620 → 3.871 | 4.079 → 4.356 | 75.887 → 127.700 |
+| 3.12.14 | 2.927 → 2.958 | 3.511 → 3.524 | 68.158 → 115.810 |
+| 3.13.15 | 2.407 → 3.100 | 2.963 → 3.576 | 75.718 → 118.076 |
+
+The type-only scan is additional work even for early matches. These are ordinary
+use regressions, not newly correct results: numeric/string `$all` is near base
+on Python 3.10–3.12, but remains 29%/21% slower on 3.13 (0.693/0.613 µs).
+The scan prevents raw Python membership from accepting bool/number equality
+or bypassing native conversion. The implementation keeps the shared semantics
+rather than caching assumptions about mutable arrays or compiling a second
+comparison system.
+
+The largest relative overhead in the added `$all` controls is the Python 3.13
+early numeric match: 2.109 versus 1.436 µs (+47%, or 0.673 µs). This is not a
+uniform at-or-below-base performance result.
+
+The new 100-value controls on Python 3.11 (µs):
+
+| Matching | v1-base | Before | New |
+| --- | ---: | ---: | ---: |
+| Numeric $all, early | 2.199 | 1.517 | 2.506 |
+| Numeric $all, last | 4.026 | 50.451 | 4.872 |
+| Numeric $all, miss | 3.912 | 42.500 | 4.308 |
+| String $all, early | 2.258 | 1.618 | 2.600 |
+| String $all, last | 5.103 | 50.534 | 4.434 |
+| String $all, miss | 4.313 | 45.869 | 4.563 |
+| Document equality, early | 1.667 | 2.277 | 1.901 |
+| Document equality, last | 75.887 | 168.789 | 127.700 |
+| Document equality, miss | 76.831 | 176.874 | 133.567 |
+
+The original 55-case subset remains separately identifiable; it does not cover
+these regressions. Worst new/0.9.0 ratios are 0.551×, 0.489×, 0.522× and 0.510×
+on Python 3.10–3.13. Worst new/base ratios in the full run are 1.012×, 0.885×,
+0.871× and 0.895×. The 1.2% Python 3.10 observation was a mixed-numeric `$lte`
+all-miss case; a focused interleaved repeat measured 0.887× instead, without a
+code change. Repeating the entire 55-case Python 3.10 subset gave worst ratios
+of 0.906× versus base and 0.557× versus 0.9.0. As before, 0.9.0's Python 3.10
+regex raises and is not timed.
+These shared-orb medians do not establish an exact zero-overhead guarantee.
