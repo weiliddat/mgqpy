@@ -315,3 +315,49 @@ rechecked; their worst fixed/baseline ratios were 0.851×, 0.907×, 0.960×, and
 0.969× on Python 3.10, 3.11, 3.12, and 3.13 respectively. 0.9.0's explicit regex
 still fails on Python 3.10 (`re.NOFLAG`); that single baseline is not timed.
 The expanded opt-in suite passes all 60 matching/construction cases.
+
+## Shared compiled traversal
+
+The path branch compiles field predicates and paths at construction and shares
+one walker across operators. Remeasured on the same orb, against independent
+imports of 0.9.0 and the exact
+[`v1-base` snapshot](https://github.com/weiliddat/mgqpy/commit/ff986702adf4bb65c22ccd58a00be5f12c5a8d1d).
+The method is the 24-block interleaved comparison described above: 200 warmup
+calls, GC disabled, identical calibrated counts targeting 20 ms per block,
+100–100,000 iterations, shuffled by `random.Random(4361)`. Python versions run
+serially. Every predicate is checked before timing; old versions giving a wrong
+answer or raising are excluded from that case, not counted as speedups.
+
+Worst matching ratio across the **55 existing matching workloads and controls**
+(lower is faster; no averaging of regressions into unrelated improvements):
+
+| Python | Paths / 0.9.0 | Paths / v1-base |
+| --- | ---: | ---: |
+| 3.10.21 | 0.510× | 0.857× |
+| 3.11.6 | 0.492× | 0.878× |
+| 3.12.14 | 0.537× | 0.893× |
+| 3.13.15 | 0.540× | 0.917× |
+
+0.9.0's Python 3.10 explicit regex still raises, leaving 54 comparable cases
+there. Numeric equality avoids native coercion when both values are exact
+built-in numbers; integer precision and the base's equality semantics remain
+unchanged. Compilation removes the matching-time expression dispatcher, path
+splits, slices and index classification. Python 3.11 medians are 0.512 µs (flat),
+0.959 µs (deep), 26.591 µs (subdocuments), 120.454 µs (large `$in`), 0.700 µs
+(regex), and 1.611 µs (logical composition). These are shared-orb observations,
+not universal performance guarantees.
+
+The opt-in suite now has 83 cases. New cases cover early/last/missing matches
+through 100 subdocuments for equality, membership, existence, size, all and
+elemMatch, plus numeric-field alternatives, indexed misses, scalar-array/null
+and nested-leaf controls. Correct indexed misses now search literal numeric
+fields in every immediate subdocument: `x.73.y` against 100 `{"y": 0}` objects
+takes 23.122 µs on Python 3.11 versus 1.899 µs in the base. This is necessary
+additional work, absent from the old indexed-hit benchmarks; successful indexed
+matching still returns before searching alternatives. The new last-hit existence
+case can also cost more than the old dedicated existence walker. These costs
+are reported separately from the existing-workload gate.
+
+Construction remains separately measured by `test_construct`; compilation
+intentionally moves work out of repeated matching. Correctness and installed-
+wheel checks run separately from these CPU-only measurements.

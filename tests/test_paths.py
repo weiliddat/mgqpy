@@ -24,3 +24,52 @@ def test_canonical_ascii_array_indices(test_db, expression, value, segment):
     query = {f"x.{segment}.value": expression}
     assert get_mongo_results(test_db, query, documents) == expected
     assert get_filter_results(Query(query).test, documents) == expected
+
+
+@pytest.mark.parametrize("query,documents,hits", [
+    ({"x.y": None}, [{}, {"x": 1}, {"x": [1]}, {"x": [{}]}, {"x": []},
+                     {"x": [[{}]]}, {"x": [None]}, {"x": [{"y": None}]}], [0, 1, 3, 7]),
+    ({"x.y": {"$in": [None]}}, [{"x": 1}, {"x": [1]}, {"x": [{}]}], [0, 2]),
+    ({"x.y": {"$gte": None}}, [{"x": 1}, {"x": [1]}, {"x": [{}]}], [0, 2]),
+    ({"x.y": {"$lte": None}}, [{"x": 1}, {"x": [1]}, {"x": [{}]}], [0, 2]),
+    ({"x.y": {"$exists": True}}, [{"x": [[{"y": 1}]]}, {"x": [1, {"y": None}]}], [1]),
+    ({"x.y": 1}, [{"x": [[{"y": 1}]]}, {"x": [{"y": 1}]}], [1]),
+    ({"x.0.y": 1}, [{"x": [[{"y": 1}]]}, {"x": [{"y": 1}]}], [0, 1]),
+    ({"x.0": 1}, [{"x": [[1]]}, {"x": [{"0": [1]}]}, {"x": [0, {"0": 1}]}], [1, 2]),
+    ({"x.0": [1]}, [{"x": [[1]]}, {"x": [{"0": [1]}]}, {"x": [1]}], [0, 1]),
+    ({"x.0.y": None}, [{"x": [1]}, {"x": [{"y": 1}]}, {"x": []}], [1]),
+    ({"x.0.y": {"$exists": False}}, [{"x": [1]}, {"x": [{"y": 1}]}, {"x": []}], [0, 2]),
+    ({"x.9": None}, [{"x": [1]}, {"x": [{}]}], [1]),
+    ({"x": 1}, [{"x": [[1]]}, {"x": [1]}, {"x": [[[1]]]}], [1]),
+    ({"x": {"$gt": 0}}, [{"x": [[1]]}, {"x": [1]}], [1]),
+    ({"x": {"$in": [1]}}, [{"x": [[1]]}, {"x": [1]}], [1]),
+    ({"x": {"$mod": [3, 1]}}, [{"x": [[1]]}, {"x": [1]}], [1]),
+    ({"x": {"$regex": "^a"}}, [{"x": [["abc"]]}, {"x": ["abc"]}], [1]),
+    ({"x": {"$not": {"$gt": 10, "$lt": 0}}}, [{"x": [-1, 11]}, {"x": [3]}], [1]),
+    ({"x": {"$elemMatch": {"0": 1}}}, [{"x": [[1]]}, {"x": [[{"0": 1}]]}], [0]),
+    ({"x": {"$elemMatch": {"0": 1}}}, [{"x": [[[1]]]}, {"x": [[[]]]}], [0]),
+    ({"x": {"$elemMatch": {"y": None}}}, [{"x": [[]]}, {"x": [None]}], [0]),
+])
+def test_traversal_candidates(test_db, query, documents, hits):
+    expected = [documents[i] for i in hits]
+    assert get_mongo_results(test_db, query, documents) == expected
+    assert get_filter_results(Query(query).test, documents) == expected
+
+
+def test_index_first_short_circuits_and_propagates_reached_errors():
+    error = RuntimeError("numeric-field lookup failed")
+
+    class BrokenFields(dict):
+        def __contains__(self, key):
+            raise error
+
+    predicate = Query({"x.0": 7})
+    assert predicate.test({"x": [7, BrokenFields()]}) is True
+    with pytest.raises(RuntimeError) as caught:
+        predicate.test({"x": [0, BrokenFields()]})
+    assert caught.value is error
+    # An indexed error is not converted to failure so an alternative can match.
+    predicate = Query({"x.0.y": 7})
+    with pytest.raises(RuntimeError) as caught:
+        predicate.test({"x": [BrokenFields(), {"0": {"y": 7}}]})
+    assert caught.value is error

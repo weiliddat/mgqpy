@@ -23,40 +23,26 @@
 
 from copy import deepcopy
 import math
+from numbers import Number
 import re
+from typing import Any
 
-from .operators.and_or_nor import _match_and, _match_or, _match_nor, _validate_query_ops
+from .operators.and_or_nor import conjunction, disjunction, negate
 from .operators.all import _match_all, _validate_all, _is_all_elem_match
 from .operators.elem_match import _match_elem_match
-from .operators.eq_ne_not import _match_eq, _match_ne, _match_not
+from .operators.eq_ne_not import _match_eq
 from .operators.exists import _match_exists
 from .operators.gt import _match_gt
 from .operators.gte import _match_gte
-from .operators.in_nin import _match_in, _match_nin
+from .operators.in_nin import _match_in
 from .operators.lt import _match_lt
 from .operators.lte import _match_lte
 from .operators.mod import _match_mod, _validate_mod
 from .operators.regex import _match_regex, _compile_regex
 from .operators.size import _match_size, _validate_size
+from .path import compile_path, walk
 
-cond_ops = {
-    "$eq",
-    "$gt",
-    "$gte",
-    "$in",
-    "$lt",
-    "$lte",
-    "$ne",
-    "$nin",
-    "$not",
-    "$regex",
-    "$options",
-    "$mod",
-    "$all",
-    "$elemMatch",
-    "$size",
-    "$exists",
-}
+__all__ = ("Query", "InvalidQuery")
 
 query_ops = {
     "$and",
@@ -70,87 +56,78 @@ class InvalidQuery(ValueError):
 
 
 class Query:
-    def __init__(self, query):
+    def __init__(self, query: dict[str, Any]):
         try:
-            self._query = _validate(_copy_query(query))
+            self._match = _compile_query(_copy_query(query))
         except (TypeError, ValueError, ArithmeticError, RecursionError) as error:
             raise InvalidQuery(str(error)) from error
 
-    def test(self, doc) -> bool:
+    def test(self, doc: dict[str, Any]) -> bool:
         if not isinstance(doc, dict):
             raise TypeError("document must be a dict")
-        return _match_cond(self._query, doc)
+        return self._match(doc)
 
 
-def _match_cond(query, doc):
-    for path in query:
-        if path in query_ops:
-            if path == "$and" and not _match_and(doc, path, query["$and"]):
-                return False
-            if path == "$or" and not _match_or(doc, path, query["$or"]):
-                return False
-            if path == "$nor" and not _match_nor(doc, path, query["$nor"]):
-                return False
-        else:
-            exp_or_ov = query[path]
-            is_all_exp = _check_all_exp(exp_or_ov)
-            path_parts = path.split(".")
-
-            if is_all_exp:
-                exp = exp_or_ov
-                if "$eq" in exp and not _match_eq(doc, path_parts, exp["$eq"]):
-                    return False
-                if "$ne" in exp and not _match_ne(doc, path_parts, exp["$ne"]):
-                    return False
-                if "$gt" in exp and not _match_gt(doc, path_parts, exp["$gt"]):
-                    return False
-                if "$gte" in exp and not _match_gte(doc, path_parts, exp["$gte"]):
-                    return False
-                if "$lt" in exp and not _match_lt(doc, path_parts, exp["$lt"]):
-                    return False
-                if "$lte" in exp and not _match_lte(doc, path_parts, exp["$lte"]):
-                    return False
-                if "$in" in exp and not _match_in(doc, path_parts, exp["$in"]):
-                    return False
-                if "$nin" in exp and not _match_nin(doc, path_parts, exp["$nin"]):
-                    return False
-                if "$not" in exp and not _match_not(doc, path, exp["$not"]):
-                    return False
-                if "$regex" in exp and not _match_regex(doc, path_parts, exp["$regex"]):
-                    return False
-                if "$mod" in exp and not _match_mod(doc, path_parts, exp["$mod"]):
-                    return False
-                if "$all" in exp and not _match_all(doc, path_parts, exp["$all"]):
-                    return False
-                if "$elemMatch" in exp and not _match_elem_match(doc, path_parts, exp["$elemMatch"]):
-                    return False
-                if "$size" in exp and not _match_size(doc, path_parts, exp["$size"]):
-                    return False
-                if "$exists" in exp and not _match_exists(doc, path_parts, exp["$exists"]):
-                    return False
-            else:
-                ov = exp_or_ov
-                if not _match_eq(doc, path_parts, ov):
-                    return False
-
-    return True
-
-
-def _validate(query):
+def _compile_query(query, location="query"):
     if not isinstance(query, dict):
-        raise TypeError("query must be a dict")
-
-    query = query.copy()
+        raise TypeError(f"{location}: query must be a dict")
+    predicates = []
     for path, value in query.items():
-        if path.startswith("$") and path not in query_ops:
-            raise TypeError(f"unknown top-level operator: {path}")
-        if path in query_ops:
-            if not _validate_query_ops(value) or not value:
-                raise TypeError(f"{path} operator value must be a nonempty list")
-            query[path] = [_validate(child) for child in value]
+        here = f"{location}.{path}"
+        try:
+            if path.startswith("$") and path not in query_ops:
+                raise TypeError(f"unknown top-level operator: {path}")
+            if path in query_ops:
+                if not isinstance(value, list) or not value:
+                    raise TypeError(f"{path} operator value must be a nonempty list")
+                children = tuple(_compile_query(child, f"{here}[{i}]") for i, child in enumerate(value))
+                predicate = conjunction(children) if path == "$and" else disjunction(children)
+                predicates.append(negate(predicate) if path == "$nor" else predicate)
+            else:
+                value = _validate_expression(value)
+                predicates.append(_compile_expression(compile_path(path), value))
+        except (TypeError, ValueError, ArithmeticError, RecursionError) as error:
+            raise ValueError(f"{here}: {error}") from error
+    return conjunction(tuple(predicates))
+
+
+def _field(parts, match, operand, expand_leaf=True):
+    def predicate(doc):
+        return walk(doc, parts, match, operand, expand_leaf)
+    return predicate
+
+
+# Preserve the established operator evaluation order, independent of key order.
+_value_ops = {
+    "$eq": _match_eq, "$ne": _match_eq,
+    "$gt": _match_gt, "$gte": _match_gte, "$lt": _match_lt, "$lte": _match_lte,
+    "$in": _match_in, "$nin": _match_in, "$not": None,
+    "$regex": _match_regex, "$mod": _match_mod, "$all": _match_all,
+    "$elemMatch": _match_elem_match, "$size": _match_size, "$exists": _match_exists,
+}
+
+
+def _compile_expression(parts, value):
+    if not _check_all_exp(value):
+        return _field(parts, _match_eq, value)
+    predicates = []
+    for op, match in _value_ops.items():
+        if op not in value:
+            continue
+        operand = value[op]
+        if op == "$not":
+            predicate = negate(_compile_expression(parts, operand))
+        elif op == "$all" and operand and _is_all_elem_match(operand):
+            predicate = conjunction(tuple(_field(parts, _match_elem_match, child["$elemMatch"], False)
+                                          for child in operand))
         else:
-            query[path] = _validate_expression(value)
-    return query
+            predicate = _field(parts, match, operand, op not in {"$all", "$elemMatch", "$size", "$exists"})
+            if op in {"$ne", "$nin"}:
+                predicate = negate(predicate)
+            if op == "$exists" and (operand is None or (isinstance(operand, Number) and operand == 0)):
+                predicate = negate(predicate)
+        predicates.append(predicate)
+    return conjunction(tuple(predicates))
 
 
 def _validate_expression(value):
@@ -164,7 +141,7 @@ def _validate_expression(value):
     # Normalize expressions without changing that literal, even in our snapshot.
     value = value.copy()
     for op in value:
-        if op not in cond_ops:
+        if op not in _value_ops and op != "$options":
             raise TypeError(f"unknown operator: {op}")
         if op in {"$ne", "$gt", "$gte", "$lt", "$lte"} and isinstance(value[op], re.Pattern):
             raise TypeError(f"{op} does not accept a regex operand")
@@ -185,7 +162,7 @@ def _validate_expression(value):
             raise TypeError("$elemMatch operator value must be a dict")
         if any(key.startswith("$") and key not in query_ops for key in child):
             raise TypeError("$elemMatch with operators on values is not supported")
-        value["$elemMatch"] = _validate(child)
+        value["$elemMatch"] = _compile_query(child)
     for op in ("$in", "$nin", "$all"):
         if op not in value:
             continue

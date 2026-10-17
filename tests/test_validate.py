@@ -1,5 +1,4 @@
 import re
-import sys
 from collections import OrderedDict
 from decimal import Decimal, InvalidOperation
 
@@ -223,9 +222,25 @@ def test_membership_operands_stop_once_decided():
             Query(query).test(doc)
 
 
-def test_deep_document_recursion_error_propagates():
-    value = 0
-    for _ in range(sys.getrecursionlimit()):
-        value = [value]
-    with pytest.raises(RecursionError):
-        Query({"x": 1}).test({"x": value})
+def test_reached_lookup_error_propagates_under_negation():
+    error = RecursionError("failed lookup")
+
+    class BrokenDocument(dict):
+        def __contains__(self, key):
+            raise error
+
+    for query in ({"x": 1}, {"x": {"$not": {"$eq": 1}}}, {"$nor": [{"x": 1}]}):
+        with pytest.raises(RecursionError) as caught:
+            Query(query).test(BrokenDocument())
+        assert caught.value is error
+
+
+def test_successful_evaluation_returns_a_bool():
+    class TruthyNumber(int):
+        def __eq__(self, other):
+            return [True]
+
+        __gt__ = __ge__ = __lt__ = __le__ = __eq__
+
+    for op in ("$eq", "$gt", "$gte", "$lt", "$lte"):
+        assert Query({"x": {op: 0}}).test({"x": TruthyNumber(1)}) is True

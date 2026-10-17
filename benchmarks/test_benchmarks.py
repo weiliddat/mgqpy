@@ -39,6 +39,29 @@ for op, hit, miss in (("$gt", 73, 0), ("$gte", 73, 0), ("$lt", 71, 99), ("$lte",
             MATCH_CASES.append((f"{op[1:]}-{direction}-{shape}", query, {"x": value}, expected))
 
 
+for name, expression, hit, miss in (
+    ("eq", 73, 73, 0), ("in", {"$in": [72, 73]}, 73, 0),
+    ("exists", {"$exists": True}, None, None),
+    ("size", {"$size": 2}, [1, 2], [1]),
+    ("all", {"$all": [1, 2]}, [1, 2], [1]),
+    ("elem-match", {"$elemMatch": {"a": 73}}, [{"a": 73}], [{"a": 0}]),
+):
+    prefix = {} if name == "exists" else {"y": miss}
+    for position in (0, 99, None):
+        values = [prefix] * 100
+        if position is not None:
+            values[position] = {"y": hit}
+        MATCH_CASES.append((f"path-{name}-{position}", {"x.y": expression}, {"x": values}, position is not None))
+
+MATCH_CASES.extend([
+    ("numeric-field", {"x.0.y": 73}, {"x": [{"0": {"y": 73}}]}, True),
+    ("indexed-miss", {"x.73.y": 73}, {"x": [{"y": 0}] * 100}, False),
+    ("scalar-array-null", {"x.y": None}, {"x": [1] * 100}, False),
+    ("nested-leaf", {"x": 73}, {"x": [[73]] * 100}, False),
+    ("missing-null", {"a.b.c": None}, {}, True),
+])
+
+
 @pytest.mark.parametrize("name,query,doc,expected", MATCH_CASES, ids=[case[0] for case in MATCH_CASES])
 def test_match(benchmark, name, query, doc, expected):
     predicate = Query(query)

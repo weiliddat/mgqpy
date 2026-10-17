@@ -41,7 +41,8 @@ Use `amp orb services ensure` to start or repair it manually and
 Test if an input satisfies a query.
 
 `Query(query)` deep-copies and validates the entire query and compiles its regex
-patterns. Invalid or unsupported queries raise `InvalidQuery`, a `ValueError`
+patterns and field paths. Construct once and reuse `test` across documents.
+Invalid or unsupported queries raise `InvalidQuery`, a `ValueError`
 subclass, at construction—even inside `$not`, `$nor`, or an unused logical branch.
 Mutating the original query afterward does not change the predicate.
 There is no separate `validate()` method: replace `Query(q).validate()` with `Query(q)`.
@@ -79,7 +80,7 @@ from mgqpy import InvalidQuery, Query
 try:
     predicate = Query({"foo": {"$in": 1}})
 except InvalidQuery as error:
-    print(error)  # $in operator value must be a list
+    print(error)  # query.foo: $in operator value must be a list
 ```
 
 ## Evaluation contract
@@ -93,6 +94,7 @@ except InvalidQuery as error:
   promise to check every value**; an error in an unreached value does not surface.
 - A reached evaluation error raises its **original exception**, without wrapping
   it or turning it into a non-match, including under `$not`, `$nor`, and `$or`.
+- Numeric array paths try the index before numeric-field alternatives; candidate order is not MongoDB's and skipped candidates are not checked.
 - Regex patterns must come from **trusted sources**; see the trust boundary below.
 
 Ordinary scalar type mismatches (such as a string against a numeric range operand)
@@ -108,17 +110,6 @@ Query({"x": {"$gt": {"a": 1}}}).test({"x": {"a": "z"}})
 
 # TypeError: the top-level document must be a dict.
 Query({}).test([])
-```
-
-```python
-import sys
-from mgqpy import Query
-
-# RecursionError: matching recurses through a document deeper than Python's limit.
-value = 0
-for _ in range(sys.getrecursionlimit()):
-    value = [value]
-Query({"x": 1}).test({"x": value})
 ```
 
 ```python
@@ -178,10 +169,18 @@ remainder the dividend's sign. Like MongoDB, it requires signed 64-bit-convertib
 operands; booleans, non-finite values, and out-of-range document numbers do not match.
 `$size` requires a finite integral number in `0..2147483647` (including `2.0`).
 
-Traversal and value comparison otherwise retain the 0.9.0 behaviour. Known
-differences remain for nested/mixed arrays, BSON container ordering, bool/number
-equality, embedded-document key order, NaN equality, `$all`, and the scope of
-date/Decimal/UUID conversions. These are not MongoDB-conformance guarantees.
+Paths are compiled once. Dict fields are followed directly; intermediate arrays
+search immediate subdocuments, not nested arrays or scalar elements. A missing
+field can match null, but a skipped scalar array element is not a missing field:
+`{"x.y": None}` matches `{"x": 1}`, not `{"x": [1]}`. Leaf arrays offer their
+immediate elements and the whole array; an explicit terminal index offers only
+the selected value. Numeric segments also search literal fields in immediate
+subdocuments, so `{"x.0": 1}` matches `{"x": [{"0": 1}]}`.
+
+Value comparison otherwise retains the 0.9.0 behaviour. Known differences remain
+for BSON container ordering, bool/number equality, embedded-document key order,
+NaN equality, `$all`, and the scope of date/Decimal/UUID conversions.
+These are not MongoDB-conformance guarantees.
 In particular, valid container range queries can raise `TypeError` instead of
 following MongoDB's BSON ordering; see the evaluation-error examples above.
 
