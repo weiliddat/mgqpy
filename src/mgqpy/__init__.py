@@ -37,7 +37,7 @@ from .operators.in_nin import _match_in
 from .operators.mod import _match_mod, _validate_mod
 from .operators.regex import _Regex, _match_regex, _compile_regex
 from .operators.size import _match_size, _validate_size
-from .path import compile_path, walk
+from .path import bind_path, compile_path
 
 __all__ = ("Query", "InvalidQuery")
 
@@ -103,9 +103,7 @@ def _field(parts, match, operand, expand_leaf=True):
         def predicate(value):
             return match(value, operand)
         return predicate
-    def predicate(doc):
-        return walk(doc, parts, match, operand, expand_leaf)
-    return predicate
+    return bind_path(parts, match, operand, expand_leaf)
 
 
 # Preserve the established operator evaluation order, independent of key order.
@@ -128,17 +126,16 @@ def _compile_expression(parts, value):
         operand = value[op]
         if op == "$not":
             predicate = negate(_compile_expression(parts, operand))
-        elif op == "$all" and not operand:
-            predicate = disjunction(())
-        elif op == "$all" and parts is None:
-            # Every requirement tests the same raw $elemMatch element.
-            predicate = conjunction(tuple(_compile_expression(parts, child) for child in operand))
-        elif op == "$all" and len(operand) == 1 and type(operand[0]) not in _SIMPLE:
-            # Other singletons lower to a child; numbers/strings keep their
-            # faster chunked membership path.
-            predicate = _compile_expression(parts, operand[0])
         elif op == "$all":
-            if _is_expression(operand[0]):
+            if not operand:
+                predicate = disjunction(())
+            elif parts is None:
+                # Every requirement tests the same raw $elemMatch element.
+                predicate = conjunction(tuple(_compile_expression(parts, child) for child in operand))
+            elif len(operand) == 1 and type(operand[0]) not in _SIMPLE:
+                # Numbers/strings keep their faster chunked membership path.
+                predicate = _compile_expression(parts, operand[0])
+            elif _is_expression(operand[0]):
                 children = tuple(child["$elemMatch"] for child in operand)
                 match = children[0][0]
                 if all(m is match for m, _ in children):

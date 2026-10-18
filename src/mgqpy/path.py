@@ -16,19 +16,26 @@ def compile_path(path: str) -> Path:
                  for key in path.split("."))
 
 
-def walk(doc, parts: Path, match: ValueMatch, operand, expand_leaf=True) -> bool:
-    # A list root occurs only in document-form $elemMatch. Here it is a document
-    # with numeric fields, not an array to traverse implicitly.
-    if isinstance(doc, list):
-        _, index = parts[0]
-        if index is None or index >= len(doc):
-            return match(MISSING, operand)
-        return _walk(doc[index], parts, 1, match, operand, expand_leaf)
-    return _walk(doc, parts, 0, match, operand, expand_leaf)
+def bind_path(parts: Path, match: ValueMatch, operand, expand_leaf=True):
+    """Bind a leaf test; $all supplies fresh per-call state as the operand."""
+    end = len(parts)
+    ends_empty = parts[-1][0] == ""
+
+    def predicate(doc, operand=operand):
+        # A list root occurs only in document-form $elemMatch. Here it is a
+        # document with numeric fields, not an array to traverse implicitly.
+        if isinstance(doc, list):
+            _, index = parts[0]
+            if index is None or index >= len(doc):
+                return match(MISSING, operand)
+            return _walk(doc[index], parts, 1, match, operand, expand_leaf, end, ends_empty)
+        return _walk(doc, parts, 0, match, operand, expand_leaf, end, ends_empty)
+
+    return predicate
 
 
-def _walk(value, parts, offset, match, operand, expand_leaf):
-    while offset < len(parts):
+def _walk(value, parts, offset, match, operand, expand_leaf, end, ends_empty):
+    while offset < end:
         key, index = parts[offset]
         if isinstance(value, dict):
             if key not in value:
@@ -40,27 +47,24 @@ def _walk(value, parts, offset, match, operand, expand_leaf):
             # index does not implicitly expand its selected array value.
             if index is not None and index < len(value):
                 selected = value[index]
-                if offset + 1 == len(parts):
+                if offset + 1 == end:
                     if match(selected, operand):
                         return True
-                elif isinstance(selected, dict):
-                    if _walk(selected, parts, offset + 1, match, operand, expand_leaf):
-                        return True
-                elif isinstance(selected, list):
+                elif isinstance(selected, (dict, list)):
                     # An indexed array plus a final empty component yields
                     # its immediate members, then itself, even for array ops.
-                    if offset + 2 == len(parts) and not parts[offset + 1][0]:
-                        if _walk(selected, parts, len(parts), match, operand, True):
+                    if ends_empty and offset + 2 == end and isinstance(selected, list):
+                        if _walk(selected, parts, end, match, operand, True, end, ends_empty):
                             return True
-                    elif _walk(selected, parts, offset + 1, match, operand, expand_leaf):
+                    elif _walk(selected, parts, offset + 1, match, operand, expand_leaf, end, ends_empty):
                         return True
             # An empty remaining suffix exhausts an array path, but objects
             # still consume literal empty keys (including repeated dots).
-            if not key and offset + 1 == len(parts):
+            if ends_empty and offset + 1 == end:
                 break
             for child in value:
                 if isinstance(child, dict):
-                    if _walk(child, parts, offset, match, operand, expand_leaf):
+                    if _walk(child, parts, offset, match, operand, expand_leaf, end, ends_empty):
                         return True
             return False
         else:

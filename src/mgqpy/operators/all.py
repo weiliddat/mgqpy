@@ -1,6 +1,6 @@
 """Independent requirements over one lazy walk, replaying reached leaf values."""
 
-from ..path import walk
+from ..path import bind_path
 from .eq_ne_not import _match_eq
 
 
@@ -60,7 +60,9 @@ def compile_all(parts, operands, match):
                 state[0] = current
                 return False
 
+    traverse = bind_path(parts, visit, None, visit)
+
     def predicate(doc):
-        return walk(doc, parts, visit, [0, []], visit)
+        return traverse(doc, [0, []])
 
     return predicate

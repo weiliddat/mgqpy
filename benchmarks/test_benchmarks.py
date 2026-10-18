@@ -83,6 +83,21 @@ MATCH_CASES.extend([
 ])
 
 
+MATCH_CASES.extend([
+    ("indexed-list-leaf", {"x.0.0": 1}, {"x": [[1]]}, True),
+    ("indexed-list-field", {"x.0.y": 1}, {"x": [[{"y": 1}]]}, True),
+    ("indexed-list-index-field", {"x.0.0.y": 1}, {"x": [[{"y": 1}]]}, True),
+    ("indexed-list-size", {"x.0.y": {"$size": 1}}, {"x": [[{"y": [1]}]]}, True),
+    ("indexed-list-all", {"x.0.y": {"$all": [1, 2]}}, {"x": [[{"y": [1, 2]}]]}, True),
+    ("indexed-list-terminal", {"x.0": [1]}, {"x": [[1]]}, True),
+])
+for depth in (4, 8, 16):
+    value = 1
+    for _ in range(depth):
+        value = [value]
+    MATCH_CASES.append((f"indexed-list-depth-{depth}", {"x" + ".0" * depth: 1}, {"x": value}, True))
+
+
 for name, operand, hit, miss in (
     ("string", "target", "target", "other"),
     ("document", {"a": [1, 2]}, {"a": [1, 2]}, {"a": [1, 3]}),
