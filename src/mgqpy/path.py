@@ -46,6 +46,10 @@ def _walk(value, parts, offset, match, operand, expand_leaf):
                 elif isinstance(selected, (dict, list)):
                     if _walk(selected, parts, offset + 1, match, operand, expand_leaf):
                         return True
+            # An empty remaining suffix exhausts an array path, but objects
+            # still consume literal empty keys (including repeated dots).
+            if not key and offset + 1 == len(parts):
+                break
             for child in value:
                 if isinstance(child, dict):
                     if _walk(child, parts, offset, match, operand, expand_leaf):

@@ -28,9 +28,9 @@ import re
 from typing import Any
 
 from .comparison import equal as _equal, _match_gt, _match_gte, _match_lt, _match_lte
-from .operators.all import compile_all
+from .operators.all import _SIMPLE, compile_all
 from .operators.and_or_nor import conjunction, disjunction, negate
-from .operators.elem_match import _match_elem_match
+from .operators.elem_match import _match_elem_match, _match_elem_match_value, _match_elem_match_pair
 from .operators.eq_ne_not import _match_eq
 from .operators.exists import _match_exists
 from .operators.in_nin import _match_in
@@ -98,6 +98,11 @@ def _compile_query(query, location="query"):
 
 
 def _field(parts, match, operand, expand_leaf=True):
+    # None binds a raw $elemMatch element, without path lookup or expansion.
+    if parts is None:
+        def predicate(value):
+            return match(value, operand)
+        return predicate
     def predicate(doc):
         return walk(doc, parts, match, operand, expand_leaf)
     return predicate
@@ -109,7 +114,7 @@ _value_ops = {
     "$gt": _match_gt, "$gte": _match_gte, "$lt": _match_lt, "$lte": _match_lte,
     "$in": _match_in, "$nin": _match_in, "$not": None,
     "$regex": _match_regex, "$mod": _match_mod, "$all": None,
-    "$elemMatch": _match_elem_match, "$size": _match_size, "$exists": _match_exists,
+    "$elemMatch": None, "$size": _match_size, "$exists": _match_exists,
 }
 
 
@@ -125,13 +130,25 @@ def _compile_expression(parts, value):
             predicate = negate(_compile_expression(parts, operand))
         elif op == "$all" and not operand:
             predicate = disjunction(())
+        elif op == "$all" and (parts is None or (len(operand) == 1 and type(operand[0]) not in _SIMPLE)):
+            # Direct requirements share one raw element. Other singletons can
+            # lower to a child, except numbers/strings: chunked membership wins.
+            predicate = conjunction(tuple(_compile_expression(parts, child) for child in operand))
         elif op == "$all":
             if _is_expression(operand[0]):
-                predicate = compile_all(parts, tuple(child["$elemMatch"] for child in operand), _match_elem_match)
+                children = tuple(child["$elemMatch"] for child in operand)
+                match = children[0][0]
+                if all(m is match for m, _ in children):
+                    predicate = compile_all(parts, tuple(child for _, child in children), match)
+                else:
+                    predicate = compile_all(parts, children, _match_elem_match_pair)
             else:
                 predicate = compile_all(parts, tuple(operand), _match_eq)
+        elif op == "$elemMatch":
+            match, child = operand
+            predicate = _field(parts, match, child, False)
         else:
-            predicate = _field(parts, match, operand, op not in {"$elemMatch", "$size", "$exists"})
+            predicate = _field(parts, match, operand, op not in {"$size", "$exists"})
             if op in {"$ne", "$nin"}:
                 predicate = negate(predicate)
             if op == "$exists" and (operand is None or (isinstance(operand, Number) and operand == 0)):
@@ -168,9 +185,17 @@ def _validate_expression(value, location):
         child = value["$elemMatch"]
         if not isinstance(child, dict):
             raise TypeError("$elemMatch operator value must be a dict")
-        if any(key.startswith("$") and key not in query_ops for key in child):
-            raise TypeError("$elemMatch with operators on values is not supported")
-        value["$elemMatch"] = _compile_query(child, f"{location}.$elemMatch")
+        here = f"{location}.$elemMatch"
+        if _is_expression(child) and next(iter(child)) not in query_ops:
+            try:
+                predicate = _compile_expression(None, _validate_expression(child, here))
+            except InvalidQuery:
+                raise
+            except (TypeError, ValueError, ArithmeticError, RecursionError) as error:
+                raise InvalidQuery(f"{here}: {error}") from error
+            value["$elemMatch"] = (_match_elem_match_value, predicate)
+        else:
+            value["$elemMatch"] = (_match_elem_match, _compile_query(child, here))
     for op in ("$in", "$nin", "$all"):
         if op not in value:
             continue

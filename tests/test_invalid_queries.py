@@ -37,6 +37,11 @@ INVALID_EXPRESSIONS = [
     {"$regex": re.compile("a", re.I), "$options": "m"},
     {"$in": "bad"}, {"$nin": "bad"}, {"$in": [{"$gt": 1}]},
     {"$all": {}}, {"$elemMatch": 1}, {"$gt": 1, "a": 2},
+    {"$elemMatch": []}, {"$elemMatch": {"$gt": 1, "a": 2}},
+    {"$elemMatch": {"a": 2, "$gt": 1}},
+    {"$elemMatch": {"$not": {}}}, {"$elemMatch": {"$not": 1}},
+    {"$elemMatch": {"$and": [{"$gt": 1}, {"$lt": 3}]}},
+    {"$elemMatch": {"$all": [{"$elemMatch": {"$gt": 1}}, 2]}},
     *[{op: re.compile("a")} for op in ("$ne", "$gt", "$gte", "$lt", "$lte")],
     {"$all": [1, {"$elemMatch": {"a": 1}}]},
     {"$typo": 1},
@@ -68,7 +73,6 @@ def test_invalid_expressions_cannot_be_negated_into_matches(test_db, expression)
     {"x": {"$in": [re.compile("a\0b")]}},
     {"x": {"$regex": re.compile("a\0b")}},
     {"x": {"$regex": "(?<name>a)"}},  # PCRE spelling is outside the Python re subset.
-    {"x": {"$elemMatch": {"$gt": 1}}},
     {"x": {"$all": [{"$or": [{"a": 1}]}]}},
     {"x": {"$all": [{"$elemMatch": {"a": 1}}, 2]}},
     {"$where": "this.x"}, {"x": {"$type": "string"}},
@@ -102,6 +106,8 @@ def test_valid_construction(query):
     ({"$or": [{"x": 1}, {"x": {"$regex": "^a", "$options": "i"}}]}, {"x": "ABC"}, True),
     ({"x": {"$not": re.compile("^a")}}, {"x": "abc"}, False),
     ({"x": {"$all": [{"$elemMatch": {"a": {"$in": [1, 2]}}}]}}, {"x": [{"a": 2}]}, True),
+    ({"x": {"$elemMatch": {"$gt": 1, "$lt": 3}}}, {"x": [0, 2, 4]}, True),
+    ({"x": {"$all": [re.compile("^a")]}}, {"x": ["abc"]}, True),
 ])
 def test_pickle_round_trip(query, document, expected):
     predicate = Query(query)
@@ -123,6 +129,10 @@ def test_predicate_can_be_submitted_to_a_process_pool():
     ({"items": {"$not": {"$elemMatch": {"x": {"$typo": 1}}}}}, "query.items.$not.$elemMatch.x"),
     ({"$or": [{}, {"items": {"$elemMatch": {"$and": [{"x": {"$typo": 1}}]}}}]},
      "query.$or[1].items.$elemMatch.$and[0].x"),
+    ({"items": {"$elemMatch": {"$typo": 1}}}, "query.items.$elemMatch"),
+    ({"items": {"$elemMatch": {"$elemMatch": {"$typo": 1}}}},
+     "query.items.$elemMatch.$elemMatch"),
+    ({"items": {"$all": [{"$elemMatch": {"$typo": 1}}]}}, "query.items.$all[0].$elemMatch"),
 ])
 def test_invalid_nested_query_names_its_location(query, location):
     with pytest.raises(InvalidQuery) as caught:
@@ -154,10 +164,16 @@ def test_literal_containers_are_deep_copied(container):
     assert predicate.test({"x": value}) is False
 
 
-def test_regex_preparation_preserves_aliased_literal_values(test_db):
+@pytest.mark.parametrize("mode", ["field", "value-elemMatch", "singleton-all"])
+def test_regex_preparation_preserves_aliased_literal_values(test_db, mode):
     regex = {"$regex": "^a", "$options": "i"}
-    query = {"literal": {"$eq": regex}, "pattern": regex}
-    document = {"literal": regex, "pattern": "ABC"}
+    expression, value = regex, "ABC"
+    if mode == "value-elemMatch":
+        expression, value = {"$elemMatch": regex}, ["ABC"]
+    elif mode == "singleton-all":
+        expression, value = {"$all": [{"$elemMatch": regex}]}, ["ABC"]
+    query = {"literal": {"$eq": regex}, "pattern": expression}
+    document = {"literal": regex, "pattern": value}
     test_db.insert_one(document.copy())
     assert test_db.count_documents(query) == 1
     assert Query(query).test(document) is True

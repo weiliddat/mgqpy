@@ -461,3 +461,74 @@ cases retain the sub-microsecond overhead above, but large prefix hits no longer
 scale with the unread array length. Native-container hits that old versions
 reject have no comparable baseline timing. Construction remains measured
 separately; reuse queries when matching many documents.
+
+## Value-form elemMatch and empty path suffixes
+
+The operator branch adds raw-element `$elemMatch`, array-boundary handling of a
+final empty path component, and selective singleton `$all` lowering.
+The suite now has 169 matching and 25 construction cases (194 total). New controls
+cover early/last/missing singleton `$all` for numbers, strings, regexes, documents,
+arrays and dates; raw-value, nested and `$all` value-form `$elemMatch`; outer `$all`
+with both forms, separately and mixed; and empty suffixes with equality, `$size`,
+`$all` and indexing.
+
+Unconditional singleton lowering was rejected. A preliminary Python 3.11 run
+changed numeric last-hit matching from 3.47 to 9.90 µs and a string miss from 3.64
+to 14.40 µs: ordinary equality loses the existing C-level membership fast path.
+Exact `int`/`float`/`str` requirements therefore retain that path. Other singleton
+requirements lower to their equality, regex or `$elemMatch` child. Direct-value
+`$all` compiles each requirement against the same raw element, regardless of
+operand type; it must not expand the element as an ordinary field matcher would.
+
+The comparison uses the exact
+[`v1-values` snapshot](https://github.com/weiliddat/mgqpy/commit/6e1bed77e050ac455a2774eeffd6a2f9bacd5c33).
+All 132 existing matching workloads are included, including the inherited traversal
+controls previously excluded when comparing the value branch with `v1-base`.
+Another 20 new controls have correct baseline results, giving 152 comparable
+cases. Baseline rejection or wrong answers on the 17 newly supported cases are
+reported separately, not counted as speedups. Each source tree is imported with
+independent globals, and source paths, shared equality and regex identities are
+checked. Matching uses 200 warmup calls and 24 shuffled/interleaved `timeit` blocks,
+GC disabled, equal calibrated counts targeting 10 ms of process CPU time per block
+(100–100,000 calls), and `random.Random(4361)`. Interpreters run serially;
+construction stays outside the timed region. Ratios use the median of paired
+new/baseline block times, reducing correlated host-load effects.
+
+Cases initially more than 1% slower were rechecked in six fresh processes per
+interpreter, pinned to one vCPU, alternating import order, with 16 paired 10 ms
+blocks. Each case's rechecked ratio is the median of its six process ratios;
+unselected cases retain their initial result. Identical-source controls use two
+fresh processes with the same settings. These controls measure timing variation,
+not a correction factor applied to the results.
+
+| Python | Largest comparable new / values ratio | Identical-source ratio range |
+| --- | ---: | ---: |
+| 3.10.21 | 1.011× | 0.972–1.025× |
+| 3.11.6 | 1.019× | 0.985–1.027× |
+| 3.12.14 | 1.014× | 0.952–1.042× |
+| 3.13.15 | 1.019× | 0.983–1.037× |
+
+No slowdown exceeds the identical-source variation in this run, but these
+measurements do **not** establish a strict zero-regression gate: residual slower
+medians remain, up to 1.9%. In particular, Python 3.11's early document-form
+`$elemMatch` measured 1.0–2.3% slower across all six repeats. Its runtime call graph
+is unchanged; the empty-suffix check adds work only when traversal reaches an
+array with an unconsumed path. Treat small differences as unresolved, rather than
+claiming every workload is faster.
+
+Representative Python 3.11 medians, microseconds per evaluation:
+
+| Matching | v1-values | Operators |
+| --- | ---: | ---: |
+| Singleton regex `$all`, first of 100 | 1.027 | 0.739 |
+| Singleton array `$all`, first of 100 | 1.413 | 1.048 |
+| Singleton array `$all`, last of 100 | 65.949 | 58.434 |
+| Singleton document `$all`, last of 100 | 117.813 | 110.382 |
+| Singleton numeric `$all`, last of 100 | 3.394 | 3.404 |
+| Singleton string `$all`, all miss | 3.465 | 3.473 |
+
+Across all four interpreters, singleton regex prefix hits improve 26–32%, array
+prefix hits 25–31%, array full scans 10–17%, and document full scans 6–8%.
+All 194 benchmark cases pass on each interpreter. The baseline rejects value-form
+`$elemMatch` and gives incorrect empty-suffix answers, so their new timings have
+no valid speed ratio against it.

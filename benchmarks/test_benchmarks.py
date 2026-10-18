@@ -2,6 +2,7 @@
 
 from datetime import date
 from decimal import Decimal
+import re
 from uuid import UUID
 
 import pytest
@@ -37,6 +38,10 @@ CASES = [
     ("decimal", {"x": {"$gte": "3.14"}}, {"x": Decimal("3.14")}),
     ("uuid", {"x": "0123456789abcdef0123456789abcdef"},
      {"x": UUID("0123456789abcdef0123456789abcdef")}),
+    ("elem-match-value", {"x": {"$elemMatch": {"$gt": 72, "$lt": 74}}},
+     {"x": list(range(100))}),
+    ("empty-suffix", {"x.": 73}, {"x": [73]}),
+    ("all-singleton", {"x": {"$all": [73]}}, {"x": list(range(100))}),
 ]
 
 
@@ -139,6 +144,46 @@ MATCH_CASES.extend([
     ("all-native", {"x": {"$all": ["3.14"]}}, {"x": [Decimal("3.14")]}, True),
     ("native-container-range", {"x": {"$gte": {"a": ["3.14"]}}},
      {"x": {"a": [Decimal("3.14")]}}, True),
+])
+
+
+for name, operand, hit, miss in (
+    ("number", 73, 73, 0), ("string", "target", "target", "other"),
+    ("regex", re.compile("^target$"), "target", "other"),
+    ("document", {"a": [1, 2]}, {"a": [1, 2]}, {"a": [1, 3]}),
+    ("array", [1, 2], [1, 2], [1, 3]),
+    ("date", "2024-08-01", date(2024, 8, 1), date(2024, 7, 31)),
+):
+    for position in (0, 99, None):
+        values = [miss] * 100
+        if position is not None:
+            values[position] = hit
+        MATCH_CASES.append((f"all-singleton-{name}-{position}", {"x": {"$all": [operand]}},
+                            {"x": values}, position is not None))
+
+for name, expression, hit, miss in (
+    ("range", {"$gt": 72, "$lt": 74}, 73, 0),
+    ("nested", {"$elemMatch": {"$eq": 73}}, [73], [0]),
+    ("all", {"$all": [73, 73]}, 73, 0),
+):
+    for position in (0, 99, None):
+        values = [miss] * 100
+        if position is not None:
+            values[position] = hit
+        MATCH_CASES.append((f"elem-match-value-{name}-{position}", {"x": {"$elemMatch": expression}},
+                            {"x": values}, position is not None))
+
+MATCH_CASES.extend([
+    ("all-elem-match-document", {"x": {"$all": [{"$elemMatch": {"a": 72}}, {"$elemMatch": {"a": 73}}]}},
+     {"x": [{"a": i} for i in range(100)]}, True),
+    ("all-elem-match-value", {"x": {"$all": [{"$elemMatch": {"$lt": 1}}, {"$elemMatch": {"$gt": 98}}]}},
+     {"x": list(range(100))}, True),
+    ("all-elem-match-mixed", {"x": {"$all": [{"$elemMatch": {"a": 73}}, {"$elemMatch": {"$eq": 74}}]}},
+     {"x": [{"a": i} for i in range(100)] + [74]}, True),
+    ("empty-suffix-size", {"x.": {"$size": 2}}, {"x": [72, 73]}, True),
+    ("empty-suffix-all", {"x.": {"$all": [72, 73]}}, {"x": [72, 73]}, True),
+    ("empty-suffix-indexed", {"x.0.": 73}, {"x": [[73]]}, True),
+    ("empty-suffix-miss", {"x.": 73}, {"x": [{"": 73}] * 100}, False),
 ])
 
 
