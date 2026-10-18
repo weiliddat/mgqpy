@@ -2,6 +2,7 @@
 
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from fractions import Fraction
 from uuid import UUID
 
 from bson import Binary, Decimal128
@@ -101,12 +102,65 @@ def test_decimal_nan_rules_against_bson(test_db, nan, op, orders):
     assert bool(test_db.count_documents({"x": {op: [-float("inf")]}})) is (-1 in orders)
 
 
+@pytest.mark.parametrize("text,truthy,divisible", [
+    ("sNaN", True, False), ("NaN", True, False),
+    ("Infinity", True, False), ("-Infinity", True, False),
+    ("0", False, True), ("-0", False, True), ("3", True, True), ("4.5", True, False),
+    ("1E+5000", True, False),
+])
+def test_decimal_numeric_guards_against_bson(test_db, text, truthy, divisible):
+    def documents(value):
+        return [{}, {"x": None}, {"x": value}, {"x": [1, value, 2]}, {"x": [1, value, 3]}]
+
+    docs = documents(Decimal(text))
+    test_db.insert_many(dict(doc, _id=i) for i, doc in enumerate(documents(Decimal128(text))))
+    for expression, bson_expression, expected in (
+        ({"$mod": [3, 0]}, {"$mod": [3, 0]}, [2, 3, 4] if divisible else [4]),
+        ({"$exists": Decimal(text)}, {"$exists": Decimal128(text)},
+         [1, 2, 3, 4] if truthy else [0]),
+    ):
+        for negate in (False, True):
+            if negate:
+                expression, bson_expression = {"$not": expression}, {"$not": bson_expression}
+                expected = [i for i in range(len(docs)) if i not in expected]
+            predicate = Query({"x": expression})
+            assert [i for i, doc in enumerate(docs) if predicate.test(doc)] == expected
+            assert sorted(doc["_id"] for doc in test_db.find({"x": bson_expression})) == expected
+
+
+def test_fraction_mod(test_db):
+    query = {"x": {"$mod": [3, 0]}}
+    assert Query(query).test({"x": Fraction(10, 3)}) is True
+    test_db.insert_one({"x": 10 / 3})
+    assert test_db.count_documents(query) == 1
+
+
+@pytest.mark.parametrize("base", [Decimal, Fraction])
+def test_mod_keeps_non_nan_numeric_errors(base):
+    error = ValueError("numeric conversion failed")
+
+    class Broken(base):
+        def __float__(self):
+            raise error
+
+    for expression in ({"$mod": [3, 0]}, {"$not": {"$mod": [3, 0]}}):
+        with pytest.raises(ValueError) as caught:
+            Query({"x": expression}).test({"x": Broken(1)})
+        assert caught.value is error
+
+
 def test_naive_and_aware_datetimes_are_not_silently_aligned():
     value = datetime(2024, 8, 2, tzinfo=timezone.utc)
     predicate = Query({"$or": [{"ok": True}, {"x": {"$gt": datetime(2024, 8, 1)}}]})
     assert predicate.test({"ok": True, "x": value}) is True
     with pytest.raises(TypeError):
         predicate.test({"ok": False, "x": value})
+    # Field operator order is fixed; only explicit $and orders the guard first.
+    with pytest.raises(TypeError):
+        Query({"x": {"$exists": False, "$gt": datetime(2024, 8, 1)}}).test({"x": value})
+    guarded = Query({"$and": [{"x": {"$exists": False}},
+                               {"x": {"$gt": datetime(2024, 8, 1)}}]})
+    assert guarded.test({"x": value}) is False
 
 
 def test_conversions_are_pairwise_not_global_normalization():

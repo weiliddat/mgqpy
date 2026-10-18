@@ -212,6 +212,23 @@ for name, expression, hit in (("size", {"$size": 0}, []),
                             {"x": [values]}, position is not None))
 
 
+for name, cast in (("float", float), ("decimal", Decimal)):
+    for shape, value, expected in (("scalar", cast(73), True),
+                                    ("early", [cast(73)] + [cast(0)] * 99, True),
+                                    ("last", [cast(0)] * 99 + [cast(73)], True),
+                                    ("miss", [cast(0)] * 100, False)):
+        MATCH_CASES.append((f"mod-{name}-{shape}", {"x": {"$mod": [3, 1]}}, {"x": value}, expected))
+
+
+for name, value in (("string", "0"), ("null", None), ("document", {}),
+                     ("bool", True), ("complex", 1j), ("decimal-large", Decimal("1E+5000"))):
+    MATCH_CASES.append((f"mod-reject-{name}", {"x": {"$mod": [3, 1]}}, {"x": [value] * 100}, False))
+
+
+for shape, value in (("scalar", Decimal("sNaN")), ("scan", [Decimal("sNaN")] * 100)):
+    MATCH_CASES.append((f"mod-snan-{shape}", {"x": {"$mod": [3, 0]}}, {"x": value}, False))
+
+
 @pytest.mark.parametrize("name,query,doc,expected", MATCH_CASES, ids=[case[0] for case in MATCH_CASES])
 def test_match(benchmark, name, query, doc, expected):
     predicate = Query(query)

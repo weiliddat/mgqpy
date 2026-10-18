@@ -9,6 +9,7 @@ _SIMPLE = {int, float, str}
 
 def _matches(group, match, operand):
     value, expand, checked = group
+    # Certified scalar prefixes use the general leaf-equality scan via C membership.
     if checked is not None:
         length = len(value)
         if checked == length:
