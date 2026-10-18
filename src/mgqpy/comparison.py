@@ -34,6 +34,33 @@ def _is_nan(value):
     return isinstance(value, float) and value != value
 
 
+def _python_equality_safe(value, depth=8):
+    """Certify exact built-ins only; bounded depth also rejects cycles."""
+    kind = type(value)
+    if kind is int or kind is str or kind is bool or kind is bytes or value is None:
+        return True
+    if kind is float:
+        return value == value
+    if depth:
+        if kind is dict:
+            return all(type(k) is str and _python_equality_safe(v, depth - 1)
+                       for k, v in value.items())
+        if kind is list:
+            return all(_python_equality_safe(v, depth - 1) for v in value)
+    return False
+
+
+def _expand_equal(values, operand, expand):
+    # Keep first-element hits cheap. A Python hit is never an acceptance oracle.
+    for index, value in enumerate(values):
+        if index == 1 and type(values) is list and _python_equality_safe(values):
+            if operand not in values:
+                return equal(values, operand)
+        if equal(value, operand):
+            return True
+    return equal(values, operand)
+
+
 def equal(a, b) -> bool:
     if a is MISSING:
         return b is None

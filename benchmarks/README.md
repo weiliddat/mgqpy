@@ -644,3 +644,80 @@ MongoDB 7/8 correctness runs pass 785 tests with 100% line coverage; installed-
 wheel smoke checks pass on all four Pythons. A fresh numeric/empty-component
 differential checks 700 queries × 145 documents on each server, with zero
 mismatches on MongoDB 7.0.45 and 8.0.34.
+
+## Reject-only container prefilter experiment: do not fold into v1-polish
+
+The experimental `v1-prefilter` branch starts at the exact
+[`v1-operators` baseline](https://github.com/weiliddat/mgqpy/commit/b6f91534fce84a49a47faa8f7016b8809f7ea229).
+Its 32 added production lines retain exact equality after a Python membership
+hit, but skip element comparisons after a certified membership miss. This
+preserves the tested semantics and fails the performance bar; keep it only as
+an experiment, not a release change.
+
+The gate admits exact int/str/bool/bytes/None, non-NaN floats, and recursively
+certified exact dict/list containers with exact string keys. Both the operand
+and document values need certification. Native converters (date, datetime, UUID,
+Decimal), custom types and subclasses fall back, including inside containers.
+A depth limit of eight also falls back on deep/cyclic values. Certification
+does not invoke custom comparisons or iterators, and is never cached across
+evaluations of mutable documents. Bool/number and document-order false positives
+are harmless because a Python hit never decides the answer.
+
+On certified trees, exact scalar equality implies Python equality. Recursive
+ordered document/array equality therefore implies Python equality too. A Python
+membership miss can skip the member checks, but must retain whole-array equality.
+The first member is checked exactly before certification to keep first hits cheap.
+
+Measured on 2026-10-18, CPython 3.10.21/3.11.6/3.12.14/3.13.15, using the critique's
+240-workload harness, two fresh reversed-import processes, 100 warmups, 12 paired
+shuffled blocks per process, GC-disabled `timeit`, CPU 0 affinity and process CPU
+time. Equal calibrated counts target 5 ms, bounded to 20–100,000 calls. All 24
+paired blocks are pooled, without replacing main observations with rechecks.
+Construction is timed separately. Ratios below are prefilter/operators; lower
+is faster. Every scan has 100 members; first/last/miss mean index 0/99/no match.
+
+| Matching | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 |
+| --- | ---: | ---: | ---: | ---: |
+| Singleton document $all, first | 1.076× | 1.060× | 1.084× | 1.073× |
+| Singleton document $all, last | 1.945× | 2.002× | 2.045× | 1.952× |
+| Singleton document $all, miss | 0.973× | 0.998× | 1.030× | 0.944× |
+| Singleton array $all, first | 1.096× | 1.111× | 1.146× | 1.116× |
+| Singleton array $all, last | 1.865× | 2.039× | 2.051× | 1.963× |
+| Singleton array $all, miss | 0.898× | 1.040× | 1.064× | 0.915× |
+| Document equality, first | 1.087× | 1.069× | 1.093× | 1.070× |
+| Document equality, last | 1.922× | 1.989× | 2.052× | 1.954× |
+| Document equality, miss | 0.947× | 0.997× | 1.042× | 0.951× |
+
+Against independently imported 0.9.0, last-hit singleton document/array `$all`
+costs 25.49–34.95× / 21.84–30.47×, and last-hit document equality costs 2.57–2.82×.
+Their misses remain 14.23–17.72× / 11.18–15.28× / 1.27–1.47× respectively. All
+nine historical fixtures pass old validation and return the same answer. Target
+construction is 11–37% slower than operators. On Python 3.11, singleton-document
+last hits take 112.65 → 224.43 µs: certification adds almost another exact walk.
+
+The other 222 workloads do not execute the experimental expansion. Initial
+untouched-case outliers reached +16.7%, while one identical-source control
+reached +18.3%. Separate two-process rechecks of 25 selected controls on Python
+3.10/3.13 reduce the largest positive observation to 2.7%; identical-source
+rechecks vary by up to 3.8%. These rechecks do not replace the original results.
+Python 3.11/3.12 untouched cases peak at +2.9%/+2.5%. There is no reliable
+additional regression outside the affected cases, nor an exact zero-cost claim.
+
+A supplementary second-member hit makes the unread-tail cost explicit: with
+100,000 safe embedded documents, operators take 12–18 µs and prefilter takes
+96–130 ms across the four Pythons. This uses 12 paired blocks and a one-call
+calibration floor rather than twenty; it is separate from the main matrix.
+The gate is linear even when the second member decides the answer. Chunking or
+prepared input schemas would be a different, larger experiment; an operand-only
+or top-level-type gate is unsound. Recommendation: drop this implementation.
+
+All eight Python × MongoDB runs pass 786 tests. The generated equivalence test
+checks 22,320 public evaluations against the disabled-prefilter path, including
+native conversions in both directions, NaNs, subclasses, custom errors, ordered
+documents, whole arrays, unread tails and cycles. It detects three unsafe
+mutations: allowing NaNs, certifying only operands, and accepting Python hits.
+The broader BSON differential has zero mismatches for 4,850 accepted queries ×
+415 documents on each MongoDB 7.0.45/8.0.34; 124 further queries are rejected by
+both. Coverage is 641 statements, 100%; installed-wheel smokes pass on all four
+Pythons. Raw samples, the full CSV and reproduction scripts accompany the
+[experiment thread](https://ampcode.com/threads/T-01a1503f-02ec-711f-8a63-4acac741f637).

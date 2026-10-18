@@ -28,6 +28,7 @@ import re
 from typing import Any
 
 from .comparison import equal as _equal, _match_gt, _match_gte, _match_lt, _match_lte
+from .comparison import _python_equality_safe, _expand_equal
 from .operators.all import _SIMPLE, compile_all
 from .operators.and_or_nor import conjunction, disjunction, negate
 from .operators.elem_match import _match_elem_match, _match_elem_match_value, _match_elem_match_pair
@@ -103,6 +104,10 @@ def _field(parts, match, operand, expand_leaf=True):
         def predicate(value):
             return match(value, operand)
         return predicate
+    if (match is _equal and expand_leaf is True
+            and (type(operand) is dict or type(operand) is list)
+            and _python_equality_safe(operand)):
+        expand_leaf = _expand_equal
     return bind_path(parts, match, operand, expand_leaf)
 
 
