@@ -178,6 +178,12 @@ a single remaining empty component exhausts the path: `{"x.": 5}` matches
 usual leaf rules there, so `{"x.": {"$exists": True}}` matches `{"x": []}`.
 Repeated dots are preserved; `x..y` still looks up the empty key between `x` and `y`.
 
+After an array index, a final empty component offers the selected array's
+immediate members and the array itself to every operator. Thus
+`{"x.0.": {"$size": 0}}` matches `{"x": [[[]]]}`, unlike `x.` or terminal `x.0`.
+This does not flatten recursively: `{"x.0.": 1}` still does not match
+`{"x": [[[1]]]}`.
+
 Conditions on the same path can match different elements. `$all` requires each
 operand to match independently, even across different subdocuments reached by a
 path. It walks the path once and reuses reached leaf values for later requirements,

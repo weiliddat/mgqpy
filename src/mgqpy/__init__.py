@@ -130,10 +130,13 @@ def _compile_expression(parts, value):
             predicate = negate(_compile_expression(parts, operand))
         elif op == "$all" and not operand:
             predicate = disjunction(())
-        elif op == "$all" and (parts is None or (len(operand) == 1 and type(operand[0]) not in _SIMPLE)):
-            # Direct requirements share one raw element. Other singletons can
-            # lower to a child, except numbers/strings: chunked membership wins.
+        elif op == "$all" and parts is None:
+            # Every requirement tests the same raw $elemMatch element.
             predicate = conjunction(tuple(_compile_expression(parts, child) for child in operand))
+        elif op == "$all" and len(operand) == 1 and type(operand[0]) not in _SIMPLE:
+            # Other singletons lower to a child; numbers/strings keep their
+            # faster chunked membership path.
+            predicate = _compile_expression(parts, operand[0])
         elif op == "$all":
             if _is_expression(operand[0]):
                 children = tuple(child["$elemMatch"] for child in operand)

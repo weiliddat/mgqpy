@@ -187,6 +187,16 @@ MATCH_CASES.extend([
 ])
 
 
+for name, expression, hit in (("size", {"$size": 0}, []),
+                               ("elem-match", {"$elemMatch": {"$eq": 1}}, [1])):
+    for position in (0, 99, None):
+        values = [[0]] * 100
+        if position is not None:
+            values[position] = hit
+        MATCH_CASES.append((f"empty-suffix-indexed-{name}-{position}", {"x.0.": expression},
+                            {"x": [values]}, position is not None))
+
+
 @pytest.mark.parametrize("name,query,doc,expected", MATCH_CASES, ids=[case[0] for case in MATCH_CASES])
 def test_match(benchmark, name, query, doc, expected):
     predicate = Query(query)

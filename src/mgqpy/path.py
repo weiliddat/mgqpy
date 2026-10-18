@@ -43,8 +43,16 @@ def _walk(value, parts, offset, match, operand, expand_leaf):
                 if offset + 1 == len(parts):
                     if match(selected, operand):
                         return True
-                elif isinstance(selected, (dict, list)):
+                elif isinstance(selected, dict):
                     if _walk(selected, parts, offset + 1, match, operand, expand_leaf):
+                        return True
+                elif isinstance(selected, list):
+                    # An indexed array plus a final empty component yields
+                    # its immediate members, then itself, even for array ops.
+                    if offset + 2 == len(parts) and not parts[offset + 1][0]:
+                        if _walk(selected, parts, len(parts), match, operand, True):
+                            return True
+                    elif _walk(selected, parts, offset + 1, match, operand, expand_leaf):
                         return True
             # An empty remaining suffix exhausts an array path, but objects
             # still consume literal empty keys (including repeated dots).
