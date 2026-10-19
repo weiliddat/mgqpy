@@ -21,6 +21,15 @@ def test_logical_queries(test_db, query, hits):
                                    {"x": 3, "y": 2}, {"x": 4}, {}], hits)
 
 
+@pytest.mark.parametrize("expression,hits", [
+    ({"$elemMatch": {"$not": {"$gt": 1}}}, [0, 2]),
+    ({"$not": {"$elemMatch": {"$gt": 1}}}, [2, 3, 4, 5]),
+])
+def test_inner_and_outer_elem_match_negation(test_db, expression, hits):
+    assert_matches(test_db, {"x": expression},
+                   [{"x": [0, 2]}, {"x": [2]}, {"x": [[2]]}, {"x": []}, {}, {"x": 2}], hits)
+
+
 class BrokenNumber(int):
     error = RuntimeError("comparison failed")
 
@@ -120,6 +129,28 @@ def test_array_operators_stop_at_a_decisive_subdocument(expression, value):
     with pytest.raises(RuntimeError) as caught:
         predicate.test({"x": BrokenTail([], error)})
     assert caught.value is error
+
+
+@pytest.mark.parametrize("expression,value", [
+    ({"$eq": 7}, 7), ({"$all": [7]}, 7),
+    ({"$not": {"$eq": 7}}, 0), ({"$elemMatch": {"$eq": 7}}, [7]),
+])
+def test_value_elem_match_stops_before_an_unread_tail(expression, value):
+    error = RuntimeError("unreadable tail")
+    predicate = Query({"x": {"$elemMatch": expression}})
+    assert predicate.test({"x": BrokenTail([value], error)}) is True
+    with pytest.raises(RuntimeError) as caught:
+        predicate.test({"x": BrokenTail([], error)})
+    assert caught.value is error
+
+
+@pytest.mark.parametrize("expression,deciding", [({"$eq": 7}, 7), ({"$not": {"$eq": 7}}, 0)])
+def test_value_elem_match_preserves_reached_comparison_errors(expression, deciding):
+    predicate = Query({"x": {"$elemMatch": expression}})
+    assert predicate.test({"x": [deciding, BrokenNumber(9)]}) is True
+    with pytest.raises(RuntimeError) as caught:
+        predicate.test({"x": [BrokenNumber(9), deciding]})
+    assert caught.value is BrokenNumber.error
 
 
 def test_membership_operands_short_circuit():

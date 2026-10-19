@@ -52,7 +52,7 @@ There is no separate `validate()` method: replace `Query(q).validate()` with `Qu
 For a valid query, `test(document)` returns `True` or `False` when evaluation
 succeeds, and raises the original exception if evaluation fails. Documents must
 be dicts; other inputs raise `TypeError`. Unsupported operators (for example
-`$type`) and value/operator-form `$elemMatch` (`{"$elemMatch": {"$gt": 1}}`) are rejected.
+`$type`) are rejected.
 
 ```python
 from mgqpy import Query
@@ -172,15 +172,42 @@ other noncanonical segments remain ordinary field names, not array indices.
 `$exists` uses the same path rules and tests presence, including null and empty
 arrays. Negation means no candidate matches, not that some candidate fails.
 
+Empty path components are literal empty field names on objects. At an array,
+a single remaining empty component exhausts the path: `{"x.": 5}` matches
+`{"x": [5]}` and `{"x": {"": 5}}`, not `{"x": [{"": 5}]}`. Operators keep their
+usual leaf rules there, so `{"x.": {"$exists": True}}` matches `{"x": []}`.
+Repeated dots are preserved; `x..y` still looks up the empty key between `x` and `y`.
+
+After an array index, a final empty component offers the selected array's
+immediate members and the array itself to every operator. Thus
+`{"x.0.": {"$size": 0}}` matches `{"x": [[[]]]}`, unlike `x.` or terminal `x.0`.
+This does not flatten recursively: `{"x.0.": 1}` still does not match
+`{"x": [[[1]]]}`.
+
 Conditions on the same path can match different elements. `$all` requires each
 operand to match independently, even across different subdocuments reached by a
 path. It walks the path once and reuses reached leaf values for later requirements,
 stopping once every requirement has matched. It uses the same equality and regex rules
 as other matching; a single requirement can also match a scalar
 (`{"x": {"$all": [1]}}` matches `{"x": 1}`).
-Empty `$all` never matches. Use document-form `$elemMatch` when several conditions
-must hold on the **same element**. `$size` tests the whole leaf array, without
-adding the sizes of different candidates.
+Empty `$all` never matches. `$size` tests the whole leaf array, without adding the
+sizes of different candidates.
+
+`$elemMatch` binds conditions to the **same immediate element** in two forms:
+
+- Document form treats each object or array element as a document (arrays expose
+  numeric fields): `{"x": {"$elemMatch": {"a": 1, "b": 2}}}` requires both fields on
+  one element. Logical `$and`/`$or`/`$nor` children also use document form.
+- Value form applies each operator to the raw element, without another array
+  expansion: `{"x": {"$elemMatch": {"$gt": 1, "$lt": 3}}}` matches `[0, 2, 4]`,
+  not `[[2]]`. Use an explicit nested `$elemMatch` to search a nested array;
+  `$size` can test that raw array directly.
+
+An inner `$not` means some element fails its predicate; an outer `$not` means no
+element satisfies `$elemMatch`. Empty arrays fail the inner form and satisfy the
+outer form. Inside value form, `$all: [1, 2]` means direct equality to both `1` and
+`2`, so `[[1, 2]]` does not match; `$all: [[1, 2]]` does. An outer `$all` of
+`$elemMatch` requirements can use separate elements for each requirement.
 
 ## Value comparison
 
@@ -248,7 +275,6 @@ Non-BSON partial orders (such as disjoint sets) can compare as ties inside conta
 There is no collation support. The regex subset and its trust boundary are
 described above. Numeric-path candidate order also differs from MongoDB, as
 noted in the evaluation contract.
-Trailing-empty path segments (such as `x.`) can differ from MongoDB 7/8.
 
 `$mod` truncates numeric operands and document values toward zero and gives the
 remainder the dividend's sign. Like MongoDB, it requires signed 64-bit-convertible

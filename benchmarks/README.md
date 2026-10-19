@@ -461,3 +461,186 @@ cases retain the sub-microsecond overhead above, but large prefix hits no longer
 scale with the unread array length. Native-container hits that old versions
 reject have no comparable baseline timing. Construction remains measured
 separately; reuse queries when matching many documents.
+
+## Value-form elemMatch and empty path suffixes
+
+The operator branch adds raw-element `$elemMatch`, array-boundary handling of a
+final empty path component, and selective singleton `$all` lowering.
+The suite now has 184 matching and 25 construction cases (209 total). New controls
+cover early/last/missing singleton `$all` for numbers, strings, regexes, documents,
+arrays and dates; raw-value, nested and `$all` value-form `$elemMatch`; outer `$all`
+with both forms, separately and mixed; and empty suffixes with equality, `$size`,
+`$all` and indexing. Six controls cover early/last/missing `$size` and `$elemMatch`
+over the candidate stream added by an indexed empty suffix. Nine more keep
+ordinary indexed lists explicit: scalar/field/array-operator hits, a terminal
+index, and nested indexing at depths 4, 8 and 16.
+
+Unconditional singleton lowering was rejected. A preliminary Python 3.11 run
+changed numeric last-hit matching from 3.47 to 9.90 µs and a string miss from 3.64
+to 14.40 µs: ordinary equality loses the existing C-level membership fast path.
+Exact `int`/`float`/`str` requirements therefore retain that path. Other singleton
+requirements lower to their equality, regex or `$elemMatch` child. Direct-value
+`$all` compiles each requirement against the same raw element, regardless of
+operand type; it must not expand the element as an ordinary field matcher would.
+
+The initial 169-case matching comparison uses the exact
+[`v1-values` snapshot](https://github.com/weiliddat/mgqpy/commit/6e1bed77e050ac455a2774eeffd6a2f9bacd5c33).
+All 132 existing matching workloads are included, including the inherited traversal
+controls previously excluded when comparing the value branch with `v1-base`.
+Another 20 new controls have correct baseline results, giving 152 comparable
+cases. Baseline rejection or wrong answers on the 17 newly supported cases are
+reported separately, not counted as speedups. Each source tree is imported with
+independent globals, and source paths, shared equality and regex identities are
+checked. Matching uses 200 warmup calls and 24 shuffled/interleaved `timeit` blocks,
+GC disabled, equal calibrated counts targeting 10 ms of process CPU time per block
+(100–100,000 calls), and `random.Random(4361)`. Interpreters run serially;
+construction stays outside the timed region. Ratios use the median of paired
+new/baseline block times, reducing correlated host-load effects.
+
+Cases initially more than 1% slower were rechecked in six fresh processes per
+interpreter, pinned to one vCPU, alternating import order, with 16 paired 10 ms
+blocks. Each case's rechecked ratio is the median of its six process ratios;
+unselected cases retain their initial result. Identical-source controls use two
+fresh processes with the same settings. These controls measure timing variation,
+not a correction factor applied to the results.
+
+| Python | Largest comparable new / values ratio | Identical-source ratio range |
+| --- | ---: | ---: |
+| 3.10.21 | 1.011× | 0.972–1.025× |
+| 3.11.6 | 1.019× | 0.985–1.027× |
+| 3.12.14 | 1.014× | 0.952–1.042× |
+| 3.13.15 | 1.019× | 0.983–1.037× |
+
+The residual 1–2% on early document-form `$elemMatch` is an accepted
+measurement-noise exception. It measured 1.0–2.3% slower across six repeats here;
+an independent check reproduced 1.011× while identical-source controls reached
+1.018× on that same workload. Python 3.10's outer `$all` of value-form `$elemMatch`
+is also an accepted noise exception: its six-process median was 1.016×, within
+the independently measured identical-source variation. These exceptions do not
+exempt other matching workloads from the performance gate. The final bound-walker
+measurements below supersede these intermediate results.
+
+Representative Python 3.11 medians, microseconds per evaluation:
+
+| Matching | v1-values | Operators |
+| --- | ---: | ---: |
+| Singleton regex `$all`, first of 100 | 1.027 | 0.739 |
+| Singleton array `$all`, first of 100 | 1.413 | 1.048 |
+| Singleton array `$all`, last of 100 | 65.949 | 58.434 |
+| Singleton document `$all`, last of 100 | 117.813 | 110.382 |
+| Singleton numeric `$all`, last of 100 | 3.394 | 3.404 |
+| Singleton string `$all`, all miss | 3.465 | 3.473 |
+
+Across all four interpreters, singleton regex prefix hits improve 26–32%, array
+prefix hits 25–31%, array full scans 10–17%, and document full scans 6–8%.
+The initial 194 benchmark cases pass on each interpreter. The baseline rejects
+value-form `$elemMatch` and gives incorrect empty-suffix answers, so their new
+timings have no valid speed ratio against it.
+
+### Indexed empty-suffix correction
+
+The correction compares all 169 existing matching workloads with the reviewed
+[`v1-operators` snapshot](https://github.com/weiliddat/mgqpy/commit/c6a12cc6eed9c1bb2216361ef6adb385998b9ff7).
+It uses the paired CPU-time method above, pinned to one vCPU: 500 warmup calls,
+24 shuffled 10 ms blocks, then six fresh-process 16-block rechecks for cases
+initially over 1% slower and the indexed/early-elemMatch controls. Rechecks
+alternate import order. Two identical-source processes use the same settings.
+Each rechecked ratio is the median of six process ratios; other cases retain
+their initial ratio. No implementation is substituted during timing.
+
+| Python | Indexed dict hits: worst new / previous | Indexed empty-suffix equality | Largest existing-control ratio | Identical-source range |
+| --- | ---: | ---: | ---: | ---: |
+| 3.10.21 | 0.978× | 0.972× | 1.016× | 0.967–1.015× |
+| 3.11.6 | 0.986× | 0.940× | 1.012× | 0.979–1.015× |
+| 3.12.14 | 0.969× | 0.919× | 1.015× | 0.962–1.031× |
+| 3.13.15 | 0.971× | 0.920× | 1.016× | 0.962–1.012× |
+
+That intermediate correction split dictionary and array selection, keeping the
+suffix check off ordinary indexed-document traversal. Indexed dict hits improved
+1–3%, and indexed empty-suffix equality improves 3–8%. Other controls retain small
+positive differences, at most 1.7%, while identical-source runs deviate by up to
+3.8%. These observations do not establish exact zero overhead. In particular,
+Python 3.10's outer `$all` of value-form `$elemMatch` measured 1.006–1.028× across
+all six repeats (median 1.016×); this is the accepted noise exception recorded
+alongside the early document-form case above.
+
+The six added indexed-empty-suffix controls measure newly required candidate
+work, separately from those 169 existing workloads. Four hits were incorrectly
+rejected before the fix. The two misses also inspect previously skipped immediate
+members now, even though their final boolean is unchanged. Python 3.11 medians
+in microseconds for 100 immediate members:
+
+| Matching | First hit | Last hit | All miss | Previous all miss |
+| --- | ---: | ---: | ---: | ---: |
+| `$size: 0` | 0.777 | 7.103 | 7.269 | 0.862 |
+| `$elemMatch: {$eq: 1}` | 0.937 | 20.596 | 68.970 | 49.930 |
+
+These rare-path full scans cost more because they now test every required
+candidate; they are not counted as matching speedups or unchanged-work controls.
+The focused real-server differential covers 924 queries × 382 documents per
+MongoDB version: 67 mismatching queries before the fix, zero afterward on both
+7.0.45 and 8.0.34. All 200 benchmark cases pass on Python 3.10–3.13.
+
+### Final ordinary-path gate
+
+Field predicates now bind the path length and final-empty classification at
+construction. One module-level walker keeps recursive calls out of per-field
+closures; the binding also removes the compiler's matching-time wrapper. Ordinary
+paths test a cached false flag instead of inspecting suffixes. `$all` binds the
+same walker and supplies fresh replay state on each invocation. Its compiler
+groups empty, raw-element, singleton and fallback cases under one `$all` branch.
+
+Remeasured on 2026-10-18 with the same independent-source, paired CPU-time method:
+200 warmups, 24 shuffled 10 ms blocks, construction outside timing, GC disabled,
+and equal calibrated iteration counts. All 184 matching cases run. The gate has
+161 comparable unchanged-work controls against the `v1-values` snapshot above:
+all 132 existing cases, 20 other controls and the nine explicit indexed-list
+controls. It includes late/missing `$size` and `$exists` and indexed misses; none
+are excluded as inherited costs when comparing with `v1-values` itself.
+
+The other 23 cases either have incorrect/rejected baseline results or require
+new candidate work. They are measured against the reviewed
+[`v1-operators` snapshot](https://github.com/weiliddat/mgqpy/commit/9d3f6d84be2bdd81b059a6bfe70ae82bb70c65f8),
+which already has the same candidate semantics. Neither group counts incorrect
+baseline answers as speedups. Cases initially over 1% slower get six fresh-process
+16-block rechecks, alternating import order; all nine indexed-list controls and
+early `$size`, `$exists` and document-form `$elemMatch` are also rechecked. Two
+identical-source processes measure variation separately. Rechecked ratios are
+medians of the six process ratios, not averages across workloads.
+
+| Python | 161 controls / values: worst | Nine indexed-list controls: worst | 23 new-semantics controls / reviewed operators: worst | Identical-source range (values) |
+| --- | ---: | ---: | ---: | ---: |
+| 3.10.21 | 1.014× | 0.956× | 1.000× | 0.961–1.037× |
+| 3.11.6 | 1.010× | 0.988× | 1.009× | 0.957–1.029× |
+| 3.12.14 | 1.009× | 0.989× | 1.008× | 0.989–1.027× |
+| 3.13.15 | 1.010× | 0.987× | 1.005× | 0.969–1.004× |
+
+No existing workload regresses beyond the observed timing variation. The largest
+positive observation is 1.4% on Python 3.10 document-equality misses; identical-
+source observations deviate by up to 4.3% in either direction. These are shared-
+orb measurements, not an exact zero-overhead guarantee. The formerly regressing
+indexed-list and early path controls are faster on every interpreter.
+
+Python 3.11 medians across the six process medians, microseconds per evaluation:
+
+| Matching | v1-values | Operators |
+| --- | ---: | ---: |
+| `x.0.0` over `[[1]]` | 0.834 | 0.770 |
+| `x.0.y` over `[[{"y": 1}]]` | 1.047 | 0.999 |
+| Indexed lists, depth 16 | 4.142 | 3.883 |
+| Early path `$size` | 0.725 | 0.693 |
+| Early path `$exists` | 0.685 | 0.646 |
+
+The accepted early document-form and outer-value-form noise exceptions remain
+recorded above. In this final run, early document-form `$elemMatch` is 7–14%
+faster than `v1-values`; Python 3.10 outer `$all` of value-form `$elemMatch` is
+0.986× the reviewed operator snapshot. Additional indexed-empty candidates still
+cost real full-scan work, as reported above. Construction is separate: flat
+`Query` construction adds 0.17–0.26 µs versus that reviewed snapshot (Python 3.11:
+2.435 → 2.658 µs) to prepare the binding. Reuse queries for repeated matching.
+
+All 209 benchmark cases pass on each interpreter. All eight Python 3.10–3.13 ×
+MongoDB 7/8 correctness runs pass 785 tests with 100% line coverage; installed-
+wheel smoke checks pass on all four Pythons. A fresh numeric/empty-component
+differential checks 700 queries × 145 documents on each server, with zero
+mismatches on MongoDB 7.0.45 and 8.0.34.

@@ -14,6 +14,8 @@ assert Query({"x.y": None}).test({"x": [1]}) is False
 assert Query({"x": 1}).test({"x": True}) is False
 assert Query({"x": {"$gt": {"z": 1}}}).test({"x": {"a": "x"}}) is True
 assert Query({"x": {"$all": [{"cost": ["3.14"]}]}}).test({"x": [{"cost": [Decimal("3.14")]}]}) is True
+assert Query({"x": {"$elemMatch": {"$gt": 1, "$lt": 3}}}).test({"x": [0, 2, 4]}) is True
+assert Query({"x.": None}).test({"x": [None]}) is True
 try:
     Query({"x": {"$options": "i"}})
 except InvalidQuery:

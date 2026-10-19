@@ -39,6 +39,9 @@ from .helpers import assert_matches
     ({"x": {"$all": [{"a": 1, "$elemMatch": 2}]}},
      [{"x": [{"a": 1, "$elemMatch": 2}]}, {"x": [{"a": 1, "$elemMatch": 3}]}], [0]),
     ({"x": {"$all": [float("nan")]}}, [{"x": [float("nan")]}, {"x": [0]}], [0]),
+    ({"x": {"$all": [re.compile("^a")]}},
+     [{"x": "abc"}, {"x": ["abc"]}, {"x": [["abc"]]},
+      {"x": re.compile("^a")}, {"x": "xyz"}], [0, 1, 3]),
     ({"x": {"$all": [re.compile("^a"), re.compile("z$")]}},
      [{"x": ["abc", "xyz"]}, {"x": "az"}, {"x": ["abc"]}, {"x": [["az"]]}], [0, 1]),
     ({"x": {"$all": [{"$elemMatch": {"n": {"$gt": 50}, "s": "M"}},
@@ -72,4 +75,48 @@ from .helpers import assert_matches
     ({"x": {"$size": 2147483647.0}}, [{"x": []}, {"x": [1, 2]}], []),
 ])
 def test_array_operators(test_db, query, documents, hits):
+    assert_matches(test_db, query, documents, hits)
+
+
+@pytest.mark.parametrize("expression,values,hits", [
+    ({"$gt": 1, "$lt": 3}, [[0, 2, 4], [0, 4], [[2]], 2, []], [0]),
+    ({"$eq": 2}, [[2], [[2]], [True], [2.0]], [0, 3]),
+    ({"$eq": [1, 2]}, [[[1, 2]], [1, 2], [[[1, 2]]]], [0]),
+    ({"$eq": {"a": 1, "b": 2}}, [[{"a": 1, "b": 2}], [{"b": 2, "a": 1}]], [0]),
+    ({"$eq": float("nan")}, [[float("nan")], [[float("nan")]], [0]], [0]),
+    ({"$in": [None, 2]}, [[None], [2], [[2]], [{}], []], [0, 1]),
+    ({"$ne": 2}, [[2], [[2]], [1, 2], []], [1, 2]),
+    ({"$nin": [2]}, [[2], [[2]], [1, 2], []], [1, 2]),
+    ({"$mod": [3, 1]}, [[4], [[4]], [3]], [0]),
+    ({"$regex": "^a", "$options": "i"}, [["ABC"], [["ABC"]], [1]], [0]),
+    ({"$not": re.compile("a")}, [["abc"], ["xyz"], [["abc"]], [None], []], [1, 2, 3]),
+    ({"$exists": True}, [[None], [{}], [[]], [], None], [0, 1, 2]),
+    ({"$exists": False}, [[None], [{}], [[]], [], None], []),
+    ({"$size": 2}, [[[1, 2]], [1, 2], [[[1, 2]]]], [0]),
+    ({"$elemMatch": {"$eq": 2}}, [[[2]], [[1, 2]], [2], [[[2]]]], [0, 1]),
+    ({"$elemMatch": {"a": 1}}, [[[{"a": 1}]], [{"a": 1}], [[{"a": 0}]]], [0]),
+    ({"$all": [1, 2]}, [[1, 2], [[1, 2]], []], []),
+    ({"$all": [2]}, [[2], [[2]], [1, 2]], [0, 2]),
+    ({"$all": [[1, 2]]}, [[[1, 2]], [1, 2], [[[1, 2]]]], [0]),
+    ({"$all": []}, [[1], [[]], []], []),
+    ({"$all": [{"$elemMatch": {"$eq": 1}}, {"$elemMatch": {"$eq": 2}}]},
+     [[[1, 2]], [[1], [2]], [1, 2]], [0]),
+])
+def test_value_elem_match_tests_raw_elements(test_db, expression, values, hits):
+    assert_matches(test_db, {"x": {"$elemMatch": expression}}, [{"x": v} for v in values], hits)
+
+
+@pytest.mark.parametrize("query,documents,hits", [
+    ({"x": {"$all": [{"$elemMatch": {"$lt": 2}}, {"$elemMatch": {"$gt": 3}}]}},
+     [{"x": [0, 4]}, {"x": [2, 4]}, {"x": [[0, 4]]}, {"x": []}], [0]),
+    ({"x": {"$all": [{"$elemMatch": {"a": 1}}, {"$elemMatch": {"$eq": 2}}]}},
+     [{"x": [{"a": 1}, 2]}, {"x": [{"a": 1}]}, {"x": [2]}], [0]),
+    ({"x": {"$all": [{"$elemMatch": {"$gt": 1, "$lt": 3}}]}},
+     [{"x": [0, 2, 4]}, {"x": [0, 4]}, {"x": [[2]]}], [0]),
+    ({"x": {"$elemMatch": {"$or": [{"a": 1}, {"b": 2}]}}},
+     [{"x": [{"a": 1}]}, {"x": [{"b": 2}]}, {"x": [[{"a": 1}]]}, {"x": [None]}], [0, 1]),
+    ({"x": {"$elemMatch": {"$and": [{"a": 1}, {"b": 2}]}}},
+     [{"x": [{"a": 1, "b": 2}]}, {"x": [{"a": 1}, {"b": 2}]}, {"x": [None]}], [0]),
+])
+def test_elem_match_forms_and_all_requirements(test_db, query, documents, hits):
     assert_matches(test_db, query, documents, hits)
