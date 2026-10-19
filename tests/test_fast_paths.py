@@ -3,6 +3,8 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
 import random
+import sys
+import time
 from uuid import UUID
 
 import pytest
@@ -79,3 +81,15 @@ def test_fast_paths_agree_with_general_paths(mode):
                     for leaves in ([values], [values[:32], values[32:]], [values[32:], values[:32]]):
                         doc = {"x": [{"y": leaf} for leaf in leaves]}
                         assert outcome(query, doc) == outcome(general(query), general(doc)), (length, operands, values)
+
+
+@pytest.mark.parametrize("op", ["$in", "$nin"])
+def test_membership_with_colliding_int_hashes_builds_in_linear_time(op):
+    # Exact ints with one shared hash; building a hash set of them is quadratic.
+    values = [i * sys.hash_info.modulus for i in range(50_000)]
+    started = time.process_time()
+    query = Query({"x": {op: values + ["a", None]}})
+    assert time.process_time() - started < 2
+    assert query.test({"x": values[-1]}) is (op == "$in")
+    assert query.test({"x": values[-1] + 1}) is (op == "$nin")
+    assert query.test({}) is (op == "$in")
