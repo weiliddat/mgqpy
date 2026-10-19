@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Performance
+
+- `$in`/`$nin` look up values by hash when every operand is an exact `None`,
+  `int`, `float` or `str`; other operand lists still compare in order.
+- Array paths test members' fields directly, and test a missing field once per
+  array instead of once per member. This mostly helps numeric-index misses.
+- Equality against a flat list or dict of exact `None`/`int`/`float`/`str`
+  members compares in C once the document value has the same shape; mismatched
+  exact types no longer go through native conversion.
+- `Query()` construction caches compiled field paths, precomputes regex flags,
+  shares scalar-only lists and skips their per-operand preparation.
+- Results match 1.0.1; see the [measurements](benchmarks/README.md#unreleased-versus-101).
+
 ## 1.0.1
 
 - Restore 0.9.0's Unicode case-insensitive regex matching, broken by 1.0.0's

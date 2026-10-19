@@ -245,7 +245,8 @@ Invalid conversion leaves the original types, so a scalar type mismatch does
 not match. Strings paired with strings stay strings. This is pairwise conversion,
 not global normalization: two differently formatted strings may each equal a
 native value without equaling each other. Membership therefore checks operands
-in order rather than using a hash set or sorted lookup.
+in order rather than normalizing them into a hash set. Only a list made entirely of
+exact `None`, `int`, `float` and `str` operands is looked up by hash, with the same result.
 
 ```python
 from datetime import date
