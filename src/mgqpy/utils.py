@@ -10,7 +10,7 @@ _EXCLUDED_NUMBERS = (bool, complex)
 
 def is_array_index(key: str) -> bool:
     """Only canonical, nonnegative ASCII integers are array indices."""
-    return key.isdecimal() and key.isascii() and (key == "0" or key[0] != "0")
+    return key == "0" or (key.isascii() and key.isdecimal() and key[0] != "0")
 
 
 def is_finite_number(value) -> bool:

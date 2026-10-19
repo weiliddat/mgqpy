@@ -1,15 +1,12 @@
-import operator
-
-from ..comparison import HASHABLE, UNEQUAL_TO_HASHABLE
+from ..comparison import _PLAIN, _UNCONVERTED, all_plain_operands
 from ..path import MISSING
 from .eq_ne_not import _match_eq
 
 
 def prepare_in(operands):
-    """Index operand lists made only of exact scalars, for an equivalent lookup."""
+    """Index lists of only plain operands, for a lookup with the pairwise result."""
     operands = tuple(operands)
-    # NaN is the only such value unequal to itself.
-    if HASHABLE.issuperset(map(type, operands)) and all(map(operator.eq, operands, operands)):
+    if all_plain_operands(operands):
         return frozenset(operands), operands
     return None, operands
 
@@ -17,11 +14,12 @@ def prepare_in(operands):
 def _match_in(value, prepared) -> bool:
     hashed, operands = prepared
     if hashed is not None:
-        if type(value) in HASHABLE:
+        if type(value) in _PLAIN:
             return value in hashed
         if value is MISSING:
             return None in hashed
-        if type(value) in UNEQUAL_TO_HASHABLE:
+        # Other unconverted types never equal a plain operand.
+        if type(value) in _UNCONVERTED:
             return False
     for operand in operands:
         if _match_eq(value, operand):

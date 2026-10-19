@@ -27,11 +27,20 @@ _KINDS = {type(None): _NULL, int: _NUMBER, float: _NUMBER, Decimal: _NUMBER, str
           dict: _DOCUMENT, list: _ARRAY, bytes: _BINARY, bytearray: _BINARY, UUID: _BINARY, bool: _BOOL,
           datetime.date: _DATE, datetime.datetime: _DATE, re.Pattern: _REGEX}
 _NUMERIC_TYPES = (int, float)
-# Except NaN, exact values of these types are equal exactly when Python equality
-# says so, and never equal values of the unequal types. Values of other types
-# (natives, subclasses) may convert or compare differently.
-HASHABLE = frozenset((type(None), int, float, str))
-UNEQUAL_TO_HASHABLE = frozenset((bool, dict, list, bytes, bytearray))
+# Pairs of distinct exact types from this set never convert, so they can be
+# equal only within one bracket (int/float, bytes/bytearray).
+_UNCONVERTED = frozenset((type(None), bool, int, float, str, bytes, bytearray, dict, list, re.Pattern))
+# Non-NaN values of these exact types are equal exactly when Python equality
+# says so, which permits C-level equality, membership and hashing.
+_PLAIN = frozenset((type(None), int, float, str))
+# Bound once: CPython 3.11 compiles method calls on imported names as slower attribute loads.
+_all_plain = _PLAIN.issuperset
+
+
+def all_plain_operands(values) -> bool:
+    """Whether Python equality decides equal() against each of these operands."""
+    # operator.eq, unlike container equality, finds NaN members.
+    return _all_plain(map(type, values)) and all(map(operator.eq, values, values))
 
 
 def _kind(value):
@@ -56,9 +65,8 @@ def equal(a, b) -> bool:
         return b is None
     at, bt = type(a), type(b)
     if at is not bt:
-        # Exact numbers use the general numeric equality without coercion.
-        if at in _NUMERIC_TYPES and bt in _NUMERIC_TYPES:
-            return a == b
+        if at in _UNCONVERTED and bt in _UNCONVERTED:
+            return _KINDS[at] == _KINDS[bt] and a == b
         a, b = _coerce(a, b)
         at, bt = type(a), type(b)
         # Aligned native scalars use the general scalar equality below.
@@ -97,6 +105,33 @@ def equal(a, b) -> bool:
                 return False
         return True
     return a == b
+
+
+def prepare_equal(operand):
+    """Return a match(value, operand) equivalent to equal() for this operand."""
+    if type(operand) is list:
+        members = operand
+    elif type(operand) is dict:
+        members = operand.values()
+    else:
+        return equal
+    # Flat plain containers compare in C once the value is certified the same way.
+    if all_plain_operands(members):
+        return _equal_plain_list if type(operand) is list else _equal_plain_dict
+    return equal
+
+
+def _equal_plain_list(value, operand):
+    if type(value) is list and _all_plain(map(type, value)):
+        return value == operand
+    return equal(value, operand)
+
+
+def _equal_plain_dict(value, operand):
+    if type(value) is dict and _all_plain(map(type, value.values())):
+        # Python dict equality ignores key order.
+        return value == operand and all(map(operator.eq, value, operand))
+    return equal(value, operand)
 
 
 def compare(a, b) -> int:

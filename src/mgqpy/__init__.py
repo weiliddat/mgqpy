@@ -27,8 +27,8 @@ from numbers import Number
 import re
 from typing import Any
 
-from .comparison import equal as _equal, _match_gt, _match_gte, _match_lt, _match_lte
-from .operators.all import _SIMPLE, compile_all
+from .comparison import _PLAIN, equal as _equal, prepare_equal, _match_gt, _match_gte, _match_lt, _match_lte
+from .operators.all import compile_all
 from .operators.and_or_nor import conjunction, disjunction, negate
 from .operators.elem_match import _match_elem_match, _match_elem_match_value, _match_elem_match_pair
 from .operators.eq_ne_not import _match_eq
@@ -94,7 +94,7 @@ def _compile_query(query, location="query"):
                 parts = compile_path(path)
                 # Scalar literals, the common case, need no preparation or dispatch.
                 if type(value) in _SCALARS:
-                    predicates.append(bind_path(parts, _equal, value))
+                    predicates.append(_field(parts, _equal, value))
                 else:
                     predicates.append(_compile_expression(parts, _prepare_expression(value, here)))
         except InvalidQuery:
@@ -105,6 +105,8 @@ def _compile_query(query, location="query"):
 
 
 def _field(parts, match, operand, expand_leaf=True):
+    if match is _equal:
+        match = prepare_equal(operand)
     # None binds a raw $elemMatch element, without path lookup or expansion.
     if parts is None:
         def predicate(value):
@@ -138,8 +140,8 @@ def _compile_expression(parts, value):
             elif parts is None:
                 # Every requirement tests the same raw $elemMatch element.
                 predicate = conjunction(tuple(_compile_expression(parts, child) for child in operand))
-            elif len(operand) == 1 and type(operand[0]) not in _SIMPLE:
-                # Numbers/strings keep their faster chunked membership path.
+            elif len(operand) == 1 and type(operand[0]) not in _PLAIN:
+                # Plain scalars keep their faster chunked membership path.
                 predicate = _compile_expression(parts, operand[0])
             elif _is_expression(operand[0]):
                 children = tuple(child["$elemMatch"] for child in operand)
