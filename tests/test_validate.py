@@ -1,7 +1,9 @@
+import pickle
 import re
-import sys
 from collections import OrderedDict
+from concurrent.futures import ProcessPoolExecutor
 from decimal import Decimal, InvalidOperation
+from multiprocessing import get_context
 
 import pytest
 from pymongo.errors import OperationFailure
@@ -94,6 +96,41 @@ def test_valid_construction(query):
     assert type(Query(query).test({})) is bool
 
 
+@pytest.mark.parametrize("query,document,expected", [
+    ({}, {}, True),
+    ({"x": 1}, {"x": 1}, True),
+    ({"x": 1}, {"x": 2}, False),
+    ({"$or": [{"x": 1}, {"x": {"$regex": "^a", "$options": "i"}}]}, {"x": "ABC"}, True),
+    ({"x": {"$not": re.compile("^a")}}, {"x": "abc"}, False),
+    ({"x": {"$all": [{"$elemMatch": {"a": {"$in": [1, 2]}}}]}}, {"x": [{"a": 2}]}, True),
+])
+def test_pickle_round_trip(query, document, expected):
+    predicate = Query(query)
+    query.clear()
+    restored = pickle.loads(pickle.dumps(predicate))
+    assert restored.test(document) is expected
+
+
+def test_predicate_can_be_submitted_to_a_process_pool():
+    predicate = Query({"x": {"$in": [1, 2]}})
+    with ProcessPoolExecutor(max_workers=1, mp_context=get_context("spawn")) as pool:
+        assert list(pool.map(predicate.test, [{"x": 1}, {"x": 3}])) == [True, False]
+
+
+@pytest.mark.parametrize("query,location", [
+    ({"items": {"$elemMatch": {"x": {"$typo": 1}}}}, "query.items.$elemMatch.x"),
+    ({"items": {"$all": [{"$elemMatch": {"x": 1}}, {"$elemMatch": {"x": {"$typo": 1}}}]}},
+     "query.items.$all[1].$elemMatch.x"),
+    ({"items": {"$not": {"$elemMatch": {"x": {"$typo": 1}}}}}, "query.items.$not.$elemMatch.x"),
+    ({"$or": [{}, {"items": {"$elemMatch": {"$and": [{"x": {"$typo": 1}}]}}}]},
+     "query.$or[1].items.$elemMatch.$and[0].x"),
+])
+def test_invalid_nested_query_names_its_location(query, location):
+    with pytest.raises(InvalidQuery) as caught:
+        Query(query)
+    assert str(caught.value) == f"{location}: unknown operator: $typo"
+
+
 def test_query_owns_a_deep_snapshot():
     values = [1, {"nested": [2]}]
     regex = {"$regex": "^a", "$options": "i"}
@@ -178,6 +215,23 @@ class BrokenTail(list):
         raise self.error
 
 
+def test_empty_all_does_not_traverse_but_keeps_validation_and_operator_order():
+    error = RuntimeError("unreadable tail")
+    doc = {"x": BrokenTail([{"y": []}], error)}
+    for query, expected in (
+        ({"x.y": {"$all": []}}, False),
+        ({"x.y": {"$not": {"$all": []}}}, True),
+        ({"$nor": [{"x.y": {"$all": []}}]}, True),
+    ):
+        assert Query(query).test(doc) is expected
+    # $gt precedes $all in operator order, regardless of insertion order.
+    with pytest.raises(RuntimeError) as caught:
+        Query({"x.y": {"$all": [], "$gt": 0}}).test(doc)
+    assert caught.value is error
+    with pytest.raises(InvalidQuery):
+        Query({"x.y": {"$all": [], "$size": -1}})
+
+
 @pytest.mark.parametrize("expression,value,result", [
     (7, 7, True), ({"$ne": 7}, 7, False),
     ({"$gt": 6}, 7, True), ({"$gte": 7}, 7, True),
@@ -223,9 +277,58 @@ def test_membership_operands_stop_once_decided():
             Query(query).test(doc)
 
 
-def test_deep_document_recursion_error_propagates():
-    value = 0
-    for _ in range(sys.getrecursionlimit()):
-        value = [value]
-    with pytest.raises(RecursionError):
-        Query({"x": 1}).test({"x": value})
+def test_reached_lookup_error_propagates_under_negation():
+    error = RecursionError("failed lookup")
+
+    class BrokenDocument(dict):
+        def __contains__(self, key):
+            raise error
+
+    for query in ({"x": 1}, {"x": {"$not": {"$eq": 1}}}, {"$nor": [{"x": 1}]}):
+        with pytest.raises(RecursionError) as caught:
+            Query(query).test(BrokenDocument())
+        assert caught.value is error
+
+
+def test_successful_evaluation_returns_a_bool():
+    class TruthyNumber(int):
+        def __eq__(self, other):
+            return [True]
+
+        __gt__ = __ge__ = __lt__ = __le__ = __eq__
+
+    for op in ("$eq", "$gt", "$gte", "$lt", "$lte"):
+        assert Query({"x": {op: 0}}).test({"x": TruthyNumber(1)}) is True
+
+
+@pytest.mark.parametrize("op,key,expected", [
+    ("$gt", "z", True), ("$gt", "a", False),
+    ("$gte", "z", True), ("$gte", "a", False),
+    ("$lt", "a", True), ("$lt", "z", False),
+    ("$lte", "a", True), ("$lte", "z", False),
+])
+def test_dict_key_comparison_normalizes_truth_and_propagates_errors(op, key, expected):
+    error = RuntimeError("truth conversion failed")
+
+    class Verdict:
+        def __bool__(self):
+            raise error
+
+    class Key(str):
+        fail = False
+
+        def __gt__(self, other):
+            return Verdict() if self.fail else [True] if super().__gt__(other) else []
+
+        def __lt__(self, other):
+            return Verdict() if self.fail else [True] if super().__lt__(other) else []
+
+    field = {"x": {op: {"m": 0}}}
+    doc = {"x": {Key(key): 0}}
+    for query in (field, {"$and": [field]}, {"$or": [field]}):
+        assert Query(query).test(doc) is expected
+        Key.fail = True
+        with pytest.raises(RuntimeError) as caught:
+            Query(query).test(doc)
+        assert caught.value is error
+        Key.fail = False

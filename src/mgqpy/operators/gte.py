@@ -1,67 +1,29 @@
 import operator
 from itertools import zip_longest
-from typing import List
 
-from mgqpy.utils import coerce, in_same_type_bracket, is_array_index
+from mgqpy.path import MISSING
+from mgqpy.utils import coerce, in_same_type_bracket
 
 
-def _match_gte(doc, path: List[str], ov) -> bool:
-    if len(path) == 0:
-        if type(doc) in (int, float) and type(ov) in (int, float):
-            return doc >= ov
-
-        if isinstance(doc, list):
-            for d in doc:
-                if _match_gte(d, path, ov):
-                    return True
-
-        if isinstance(doc, list) and isinstance(ov, list):
-            if doc >= ov:
+def _match_gte(doc, ov) -> bool:
+    if type(doc) in (int, float) and type(ov) in (int, float):
+        return doc >= ov
+    if isinstance(doc, dict) and isinstance(ov, dict):
+        for doc_key, ov_key in zip_longest(doc, ov):
+            if doc_key is None:
+                return False
+            if ov_key is None:
                 return True
-
-        if isinstance(doc, dict) and isinstance(ov, dict):
-            if not doc and not ov:
+            if doc_key != ov_key:
+                return doc_key > ov_key
+            if doc[doc_key] > ov[ov_key]:
                 return True
-
-            keys = zip_longest(doc.keys(), ov.keys())
-            for doc_key, ov_key in keys:
-                if doc_key is None:
-                    return False
-                if ov_key is None:
-                    return True
-                if doc_key != ov_key:
-                    return doc_key > ov_key
-                if doc_key == ov_key:
-                    if doc[doc_key] > ov[ov_key]:
-                        return True
-                    if doc[doc_key] < ov[ov_key]:
-                        return False
-            return True
-
-        if doc is None and ov is None:
-            return True
-
-        doc, ov = coerce(doc, ov)
-        return in_same_type_bracket(doc, ov) and operator.ge(doc, ov)
-
-    key = path[0]
-    rest = path[1:]
-
-    if isinstance(doc, dict) and key in doc:
-        return _match_gte(doc[key], rest, ov)
-
-    if isinstance(doc, list) and is_array_index(key):
-        idx = int(key)
-        if idx < len(doc):
-            return _match_gte(doc[idx], rest, ov)
-
-    if isinstance(doc, list):
-        for d in doc:
-            if _match_gte(d, path, ov):
-                return True
-        return False
-
-    if ov is None:
+            if doc[doc_key] < ov[ov_key]:
+                return False
         return True
-
-    return False
+    if doc is MISSING:
+        return ov is None
+    if doc is None and ov is None:
+        return True
+    doc, ov = coerce(doc, ov)
+    return in_same_type_bracket(doc, ov) and operator.ge(doc, ov)
