@@ -72,6 +72,25 @@ Scans use 100 members unless noted.
 | Singleton `$all` over documents, late hit/miss | 12.17–19.14× |
 | Singleton `$all` over arrays, late hit/miss | 9.30–16.27× |
 
+Single-use time for a fresh `Query(q).test(doc)`, **1.0 / 0.9.0**, across
+CPython 3.10–3.13 (same scan sizes as above):
+
+| Scenario | 0.9 µs | 1.0 µs | Single-use ratio |
+| --- | ---: | ---: | ---: |
+| Flat equality | 1.04–1.83 | 2.26–3.51 | 1.93–2.27× |
+| Mixed numeric range, last | 53.0–84.5 | 10.5–17.0 | 0.17–0.21× |
+| `$in`, last/1000 | 474–756 | 262–462 | 0.49–0.61× |
+| Numeric `$all`, late | 2.71–4.12 | 8.29–11.23 | 2.54–3.04× |
+| Ordered-document equality, late/miss | 58.1–81.1 | 88.6–132.7 | 1.45–1.65× |
+| Numeric-index miss | 1.45–2.56 | 14.5–24.9 | 8.26–10.66× |
+| Singleton document `$all`, late/miss | 4.79–7.05 | 82.8–139.4 | 13.09–20.47× |
+| Singleton array `$all`, late/miss | 2.92–4.76 | 46.8–78.5 | 10.65–17.39× |
+
+For ordinary queries, single use adds a few µs. Wide logical queries compile
+every branch up front: an early-deciding 100-clause `$and`/`$or` costs about
+0.2–0.3 ms single-use versus 2–4 µs in 0.9.0. Reuse `Query` objects when matching
+many documents.
+
 Construction is the up-front cost; reuse `Query` objects. Reuse does not remove
 the slower per-match costs above. These are shared-orb observations, not
 performance guarantees. Full measurements and method: [benchmarks](benchmarks/README.md).
