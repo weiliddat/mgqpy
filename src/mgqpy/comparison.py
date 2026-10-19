@@ -35,6 +35,9 @@ _UNCONVERTED = frozenset((type(None), bool, int, float, str, bytes, bytearray, d
 _PLAIN = frozenset((type(None), int, float, str))
 # Bound once: CPython 3.11 compiles method calls on imported names as slower attribute loads.
 _all_plain = _PLAIN.issuperset
+# equal() compares document keys with their own !=; only exact str keys let
+# Python dict equality decide instead.
+_all_str = frozenset((str,)).issuperset
 # Above this length, certifying every member costs more than equal() needs to
 # reject at an early mismatch.
 _PLAIN_CONTAINER_LIMIT = 16
@@ -114,7 +117,7 @@ def prepare_equal(operand):
     """Return a match(value, operand) equivalent to equal() for this operand."""
     if type(operand) is list:
         members = operand
-    elif type(operand) is dict:
+    elif type(operand) is dict and _all_str(map(type, operand)):
         members = operand.values()
     else:
         return equal
@@ -137,7 +140,7 @@ def _equal_plain_dict(value, operand):
     if type(value) is dict:
         if len(value) != len(operand):
             return False
-        if _all_plain(map(type, value.values())):
+        if _all_str(map(type, value)) and _all_plain(map(type, value.values())):
             # Python dict equality ignores key order.
             return value == operand and all(map(operator.eq, value, operand))
     return equal(value, operand)
