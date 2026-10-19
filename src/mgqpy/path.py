@@ -11,11 +11,18 @@ Path = tuple[tuple[str, int | None], ...]
 ValueMatch = Callable[[Any, Any], bool]
 
 
-@lru_cache(maxsize=1024)
 def compile_path(path: str) -> Path:
+    # A subclass equal to a cached string may still split differently.
+    return _compile_cached(path) if type(path) is str else _compile(path)
+
+
+def _compile(path):
     # Longer digit strings cannot index a Python list; keep their field spelling.
     return tuple((key, int(key) if is_array_index(key) and len(key) < 20 else None)
                  for key in path.split("."))
+
+
+_compile_cached = lru_cache(maxsize=1024)(_compile)
 
 
 def bind_path(parts: Path, match: ValueMatch, operand, expand_leaf=True):
