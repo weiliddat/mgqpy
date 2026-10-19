@@ -43,7 +43,8 @@ Use `amp orb services ensure` to start or repair it manually and
 Test if an input satisfies a query.
 
 `Query(query)` deep-copies and validates the entire query and compiles its regex
-patterns and field paths. Construct once and reuse `test` across documents.
+patterns and field paths.
+Reuse `Query` objects: construction is the up-front cost, not part of each match.
 Invalid or unsupported queries raise `InvalidQuery`, a `ValueError`
 subclass, at construction—even inside `$not`, `$nor`, or an unused logical branch.
 Mutating the original query afterward does not change the predicate.
@@ -96,6 +97,9 @@ except InvalidQuery as error:
   promise to check every value**; an error in an unreached value does not surface.
 - A reached evaluation error raises its **original exception**, without wrapping
   it or turning it into a non-match, including under `$not`, `$nor`, and `$or`.
+- Operators within one field expression run in a fixed internal order, not dict
+  insertion order. A range can run before an `$exists` guard even if the guard
+  appears first. Use explicit `$and` clauses for ordered guards.
 - Numeric array paths try the index before numeric-field alternatives; candidate order is not MongoDB's and skipped candidates are not checked.
 - Comparison-method call order on non-BSON custom types is not guaranteed; reached exceptions still propagate.
 - Regex patterns must come from **trusted sources**; see the trust boundary below.
@@ -125,6 +129,17 @@ query = Query({"$or": [{"ok": True}, {"x": {"$gt": datetime(2024, 8, 1)}}]})
 value = datetime(2024, 8, 2, tzinfo=timezone.utc)
 assert query.test({"ok": True, "x": value}) is True
 query.test({"ok": False, "x": value})  # TypeError: comparison is reached.
+```
+
+For example, `{"x": {"$exists": False, "$gt": datetime(2024, 8, 1)}}` still
+raises on that aware datetime. To run the guard first:
+
+```python
+guarded = Query({"$and": [
+    {"x": {"$exists": False}},
+    {"x": {"$gt": datetime(2024, 8, 1)}},
+]})
+assert guarded.test({"x": value}) is False
 ```
 
 ## Regex subset and trust boundary

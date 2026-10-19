@@ -1,5 +1,95 @@
 # Matching and construction baseline
 
+## 0.9.0 versus the 1.0 stack
+
+Matching-time ratios, **1.0 / 0.9.0**; lower is faster. Full scans use 100 array
+members unless noted. This final-stack measurement comes before the historical
+branch-by-branch measurements below; those earlier results do not cover every
+cost in the finished comparison model.
+
+| Matching | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 |
+| --- | ---: | ---: | ---: | ---: |
+| Flat equality | 0.35× | 0.31× | 0.34× | 0.31× |
+| Deep dict path | 0.34× | 0.34× | 0.38× | 0.41× |
+| Mixed numeric range, last hit | 0.13× | 0.13× | 0.12× | 0.10× |
+| `$in`, last of 1,000 | 0.27× | 0.21× | 0.22× | 0.20× |
+| Numeric `$all`, late hit | 0.89× | 0.98× | 0.87× | 1.04× |
+| Ordered-document equality, last hit | 1.54× | 1.43× | 1.43× | 1.42× |
+| Numeric-index miss | 8.40× | 7.24× | 9.43× | 8.86× |
+| Singleton `$all` over documents, last hit | 19.05× | 12.33× | 13.62× | 18.12× |
+| Singleton `$all` over arrays, last hit | 15.82× | 9.30× | 12.11× | 16.04× |
+
+All-miss scans are similar: ordered-document equality is 1.40–1.53×,
+singleton document `$all` 12.17–19.14×, and singleton array `$all` 9.41–16.27×.
+
+Measured on 2026-10-18 in a shared Linux x86-64 Amp orb, Intel Xeon 2.60 GHz,
+CPython 3.10.21/3.11.6/3.12.14/3.13.15. The source snapshots are
+[0.9.0](https://github.com/weiliddat/mgqpy/commit/f22a920babc0a37dd07fbe4dae94632f81d9b79d)
+and the [1.0 candidate](https://github.com/weiliddat/mgqpy/commit/137f01c3d465d6f70ab704241fd02457f706094d),
+whose runtime source equals the `v1-operators` baseline. The polish gate below
+checks subsequent changes against that baseline separately.
+
+The whole-stack audit measured 240 scenarios per interpreter, matching and
+construction separately. Two fresh processes reversed independent-source import
+order, each using 100 warmups and 12 shuffled paired blocks targeting 5 ms of
+process CPU time, pinned to CPU 0, with GC disabled during timing. The table uses
+the median of all 24 paired ratios, not a selected favorable process. Wrong,
+rejected or crashing 0.9.0 results have no speedup ratio; its explicit regex also
+fails on Python 3.10. Identical-source variation reached about 5.1%, so numeric
+`$all` is near parity, not a reliable speedup. These are observations, not guarantees.
+
+Document equality checks key order and compares values recursively instead of
+using Python's C-level dict equality; singleton container `$all` also replaces
+C-level membership. Numeric-index misses search literal numeric-field alternatives
+that 0.9.0 skipped. The costs do not amortize away by reusing a query on these workloads.
+
+Construction is the up-front cost: flat `Query` construction rose from
+0.073–0.158 µs to 1.840–2.932 µs; matching fell from 0.952–1.676 µs to
+0.297–0.582 µs. Flat equality breaks even after three documents in this run.
+That is not a universal break-even point. Reuse `Query` objects, and measure the
+queries and document shapes your application actually uses.
+
+## v1-polish versus v1-operators
+
+The incremental gate compares the polish changes with
+[`v1-operators`](https://github.com/weiliddat/mgqpy/commit/b6f91534fce84a49a47faa8f7016b8809f7ea229),
+not with 0.9.0. It covers 254 comparable matching cases: 184 existing fixtures,
+56 broader audit controls and 14 added numeric-guard controls. All answers agree.
+Construction is measured separately for the 25 existing construction fixtures.
+
+On the same orb and four interpreters above, two fresh processes use 100 warmups
+and 12 shuffled paired 5 ms CPU-time blocks, pinned to CPU 0 with GC disabled.
+Every initial ratio over 1.01, all construction fixtures, all `$mod` controls,
+the nine indexed-list controls and selected early-path/array controls receive
+six fresh-process 16-block rechecks (81–85 cases per interpreter). Two further
+processes compare independent identical-source imports. Import order alternates.
+Rechecked cases pool all 96 paired ratios; other cases retain their initial 24.
+
+| Python | Largest matching ratio | Identical-source matching range | Construction ratio range |
+| --- | ---: | ---: | ---: |
+| 3.10.21 | 1.011× | 0.982–1.033× | 0.991–1.003× |
+| 3.11.6 | 1.014× | 0.970–1.023× | 0.983–1.006× |
+| 3.12.14 | 1.013× | 0.986–1.018× | 0.986–1.009× |
+| 3.13.15 | 1.011× | 0.987–1.033× | 0.991–1.006× |
+
+No incremental regression stands out from the observed timing variation; this
+does not establish exact zero overhead. The `$mod` controls are at most 1.008×.
+Named ranks define `_KINDS`; annotated hot-path literals preserve the executable
+bytecode of all 15 comparison functions on each interpreter. `$all` replay and
+chunked membership are unchanged.
+
+Two additional sNaN cases measure new behavior, not speedups: scalar rejection
+takes 1.13–1.91 µs and rejecting 100 members takes 79.8–112.8 µs across the four
+interpreters. The baseline raises `ValueError` instead of returning a boolean.
+The 225 benchmark cases pass on every interpreter. All eight Python × MongoDB
+7/8 runs pass 800 correctness tests with 100% line coverage; four isolated wheel
+smokes pass without runtime dependencies. Generated tests compare 25,787 fast
+and general-path outcomes. A fresh differential checks 4,974 queries × 415
+documents per server: 4,850 accepted queries agree, 124 are rejected by both,
+and there are zero mismatches on MongoDB 7.0.45 and 8.0.34.
+
+## Running the benchmarks
+
 These CPU-only benchmarks are opt-in, independent of MongoDB and the correctness
 suite. `uv run pytest` collects only `tests/`; run these explicitly:
 

@@ -12,20 +12,32 @@ from .path import MISSING
 
 # The types representable without a BSON dependency. Numeric representations
 # share a bracket; bool does not inherit int's bracket.
-_KINDS = {type(None): 0, int: 1, float: 1, Decimal: 1, str: 2,
-          dict: 3, list: 4, bytes: 5, bytearray: 5, UUID: 5, bool: 6,
-          datetime.date: 7, datetime.datetime: 7, re.Pattern: 8}
+# Hot paths use annotated rank literals to avoid repeated global lookups.
+_NULL = 0
+_NUMBER = 1
+_STRING = 2
+_DOCUMENT = 3
+_ARRAY = 4
+_BINARY = 5
+_BOOL = 6
+_DATE = 7
+_REGEX = 8
+
+_KINDS = {type(None): _NULL, int: _NUMBER, float: _NUMBER, Decimal: _NUMBER, str: _STRING,
+          dict: _DOCUMENT, list: _ARRAY, bytes: _BINARY, bytearray: _BINARY, UUID: _BINARY, bool: _BOOL,
+          datetime.date: _DATE, datetime.datetime: _DATE, re.Pattern: _REGEX}
 _NUMERIC_TYPES = (int, float)
 
 
 def _kind(value):
+    # Exact types take precedence: bool must not enter int's subclass bracket.
     kind = _KINDS.get(type(value))
     if kind is not None:
         return kind
     for cls, kind in _KINDS.items():
         if isinstance(value, cls):
             return kind
-    return 1 if isinstance(value, Number) else None
+    return 1 if isinstance(value, Number) else None  # _NUMBER
 
 
 def _is_nan(value):
@@ -39,17 +51,19 @@ def equal(a, b) -> bool:
         return b is None
     at, bt = type(a), type(b)
     if at is not bt:
+        # Exact numbers use the general numeric equality without coercion.
         if at in _NUMERIC_TYPES and bt in _NUMERIC_TYPES:
             return a == b
         a, b = _coerce(a, b)
         at, bt = type(a), type(b)
-        # Successful date/UUID conversions align native scalar types. Decimal
-        # still needs the shared NaN handling below.
+        # Aligned native scalars use the general scalar equality below.
         if at is bt and at is not Decimal:
             return a == b
     if at is bt:
+        # Exact ints/strings use the general same-kind scalar equality.
         if at is int or at is str:
             return a == b
+        # Exact floats use the general numeric equality, including NaNs.
         if at is float:
             return a == b or (a != a and b != b)
         kind = _KINDS.get(at)
@@ -61,16 +75,16 @@ def equal(a, b) -> bool:
             return a == b
         if kind != other:
             return False
-    if kind == 1 and (_is_nan(a) or _is_nan(b)):
+    if kind == 1 and (_is_nan(a) or _is_nan(b)):  # _NUMBER
         return _is_nan(a) and _is_nan(b)
-    if kind == 3:
+    if kind == 3:  # _DOCUMENT
         if len(a) != len(b):
             return False
         for (ak, av), (bk, bv) in zip(a.items(), b.items()):
             if ak != bk or not equal(av, bv):
                 return False
         return True
-    if kind == 4:
+    if kind == 4:  # _ARRAY
         if len(a) != len(b):
             return False
         for av, bv in zip(a, b):
@@ -82,12 +96,14 @@ def equal(a, b) -> bool:
 
 def compare(a, b) -> int:
     """Recursive BSON ordering; query-level type brackets are applied outside."""
+    # Exact numbers use _compare's general numeric order without preparation.
     if type(a) in _NUMERIC_TYPES and type(b) in _NUMERIC_TYPES:
         if a != a:
             return 0 if b != b else -1
         if b != b:
             return 1
         return (a > b) - (a < b)
+    # Same-type pairs need only one classification, equivalent to pair preparation.
     if type(a) is type(b):
         kind = _kind(a)
     else:
@@ -101,12 +117,13 @@ def compare(a, b) -> int:
 
 def _compare(a, b, kind):
     """Order an already converted pair in one bracket (None means Python)."""
-    if kind == 3:
+    if kind == 3:  # _DOCUMENT
         for (an, av), (bn, bv) in zip(a.items(), b.items()):
             at, bt = type(av), type(bv)
             if at is not bt:
                 av, bv = _coerce(av, bv)
                 at, bt = type(av), type(bv)
+            # Exact int/string fields use the general kind check and _compare order.
             simple = at is bt and (at is int or at is str)
             if not simple:
                 ak, bk = _kind(av), _kind(bv)
@@ -130,9 +147,10 @@ def _compare(a, b, kind):
         if a > b:
             return 1
         return -1 if a < b else 0
-    if kind == 0:
+    if kind == 0:  # _NULL
         return 0
-    if kind == 1:
+    if kind == 1:  # _NUMBER
+        # Exact numbers use the general NaN-aware numeric order below.
         if type(a) in _NUMERIC_TYPES and type(b) in _NUMERIC_TYPES:
             if a != a:
                 return 0 if b != b else -1
@@ -141,20 +159,21 @@ def _compare(a, b, kind):
             return (a > b) - (a < b)
         if _is_nan(a) or _is_nan(b):
             return 0 if _is_nan(a) and _is_nan(b) else -1 if _is_nan(a) else 1
-    if kind == 4:
+    if kind == 4:  # _ARRAY
         for av, bv in zip(a, b):
             result = compare(av, bv)
             if result:
                 return result
         return (len(a) > len(b)) - (len(a) < len(b))
-    if kind == 5:
+    if kind == 5:  # _BINARY
+        # Bytes use the general (length, subtype=0, payload) binary order.
         if type(a) is bytes and type(b) is bytes:
             if len(a) != len(b):
                 return (len(a) > len(b)) - (len(a) < len(b))
             return (a > b) - (a < b)
         a = (len(a.bytes), 4, a.bytes) if isinstance(a, UUID) else (len(a), 0, bytes(a))
         b = (len(b.bytes), 4, b.bytes) if isinstance(b, UUID) else (len(b), 0, bytes(b))
-    if kind == 8:
+    if kind == 8:  # _REGEX
         a, b = _regex_key(a), _regex_key(b)
     if a > b:
         return 1
@@ -164,6 +183,7 @@ def _compare(a, b, kind):
 def _range(value, operand, op, inclusive=False) -> bool:
     if value is MISSING:
         return inclusive and operand is None
+    # Same-type pairs need only one classification, equivalent to pair preparation.
     if type(value) is type(operand):
         kind = other = _kind(value)
     else:
@@ -175,9 +195,9 @@ def _range(value, operand, op, inclusive=False) -> bool:
         return False
     # Mongo's direct ranges reject one-NaN comparisons. Container ordering
     # instead uses the total order in compare(), where NaN precedes -inf.
-    if kind == 1 and (_is_nan(value) or _is_nan(operand)):
+    if kind == 1 and (_is_nan(value) or _is_nan(operand)):  # _NUMBER
         return inclusive and _is_nan(value) and _is_nan(operand)
-    if kind in (0, 3, 4, 5, 8):
+    if kind in (0, 3, 4, 5, 8):  # _NULL, _DOCUMENT, _ARRAY, _BINARY, _REGEX
         return op(_compare(value, operand, kind), 0)
     return op(value, operand)
 
@@ -185,34 +205,38 @@ def _range(value, operand, op, inclusive=False) -> bool:
 # Exact built-in numbers and documents bypass redundant preparation and dynamic
 # operator calls. These small entries matter when scanning long arrays.
 def _match_gt(value, operand) -> bool:
+    # Exact numbers/documents use _range's general bracketed comparison.
     if type(value) in _NUMERIC_TYPES and type(operand) in _NUMERIC_TYPES:
         return value > operand
     if type(value) is dict and type(operand) is dict:
-        return _compare(value, operand, 3) > 0
+        return _compare(value, operand, 3) > 0  # _DOCUMENT
     return _range(value, operand, operator.gt)
 
 
 def _match_gte(value, operand) -> bool:
+    # Exact numbers/documents use _range's general bracketed comparison.
     if type(value) in _NUMERIC_TYPES and type(operand) in _NUMERIC_TYPES:
         return value >= operand or (value != value and operand != operand)
     if type(value) is dict and type(operand) is dict:
-        return _compare(value, operand, 3) >= 0
+        return _compare(value, operand, 3) >= 0  # _DOCUMENT
     return _range(value, operand, operator.ge, True)
 
 
 def _match_lt(value, operand) -> bool:
+    # Exact numbers/documents use _range's general bracketed comparison.
     if type(value) in _NUMERIC_TYPES and type(operand) in _NUMERIC_TYPES:
         return value < operand
     if type(value) is dict and type(operand) is dict:
-        return _compare(value, operand, 3) < 0
+        return _compare(value, operand, 3) < 0  # _DOCUMENT
     return _range(value, operand, operator.lt)
 
 
 def _match_lte(value, operand) -> bool:
+    # Exact numbers/documents use _range's general bracketed comparison.
     if type(value) in _NUMERIC_TYPES and type(operand) in _NUMERIC_TYPES:
         return value <= operand or (value != value and operand != operand)
     if type(value) is dict and type(operand) is dict:
-        return _compare(value, operand, 3) <= 0
+        return _compare(value, operand, 3) <= 0  # _DOCUMENT
     return _range(value, operand, operator.le, True)
 
 

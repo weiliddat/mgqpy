@@ -88,7 +88,7 @@ def _compile_query(query, location="query"):
                 predicate = conjunction(children) if path == "$and" else disjunction(children)
                 predicates.append(negate(predicate) if path == "$nor" else predicate)
             else:
-                value = _validate_expression(value, here)
+                value = _prepare_expression(value, here)
                 predicates.append(_compile_expression(compile_path(path), value))
         except InvalidQuery:
             raise
@@ -151,13 +151,13 @@ def _compile_expression(parts, value):
             predicate = _field(parts, match, operand, op not in {"$size", "$exists"})
             if op in {"$ne", "$nin"}:
                 predicate = negate(predicate)
-            if op == "$exists" and (operand is None or (isinstance(operand, Number) and operand == 0)):
+            if op == "$exists" and (operand is None or (isinstance(operand, Number) and not operand)):
                 predicate = negate(predicate)
         predicates.append(predicate)
     return conjunction(tuple(predicates))
 
 
-def _validate_expression(value, location):
+def _prepare_expression(value, location):
     if isinstance(value, re.Pattern):
         return _compile_regex(value)
     # As in MongoDB, the first key distinguishes an expression from a literal.
@@ -180,7 +180,7 @@ def _validate_expression(value, location):
         child = value["$not"]
         if not isinstance(child, re.Pattern) and not _is_expression(child):
             raise TypeError("$not requires a regex or a nonempty operator expression")
-        value["$not"] = _validate_expression(child, f"{location}.$not")
+        value["$not"] = _prepare_expression(child, f"{location}.$not")
     if "$elemMatch" in value:
         child = value["$elemMatch"]
         if not isinstance(child, dict):
@@ -188,7 +188,7 @@ def _validate_expression(value, location):
         here = f"{location}.$elemMatch"
         if _is_expression(child) and next(iter(child)) not in query_ops:
             try:
-                predicate = _compile_expression(None, _validate_expression(child, here))
+                predicate = _compile_expression(None, _prepare_expression(child, here))
             except InvalidQuery:
                 raise
             except (TypeError, ValueError, ArithmeticError, RecursionError) as error:
@@ -207,7 +207,7 @@ def _validate_expression(value, location):
             if _is_expression(operand):
                 if op != "$all" or set(operand) != {"$elemMatch"}:
                     raise TypeError(f"{op} does not accept operator expressions here")
-                operands[i] = _validate_expression(operand, f"{location}.{op}[{i}]")
+                operands[i] = _prepare_expression(operand, f"{location}.{op}[{i}]")
             elif isinstance(operand, re.Pattern):
                 operands[i] = _compile_regex(operand)
         if op == "$all":
