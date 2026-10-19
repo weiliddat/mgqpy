@@ -55,6 +55,10 @@ def _walk(value, parts, offset, match, operand, expand_leaf):
             return match(MISSING, operand)
 
     if expand_leaf and isinstance(value, list):
+        # $all replays whole reached leaves for successive requirements. Its
+        # leaf handler must not expand a value selected by a terminal index.
+        if expand_leaf is not True:
+            return expand_leaf(value, operand, True)
         for child in value:
             if match(child, operand):
                 return True
