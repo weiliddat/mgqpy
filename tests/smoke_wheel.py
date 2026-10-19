@@ -7,7 +7,7 @@ from mgqpy import InvalidQuery, Query
 
 
 assert Query({"items.x": {"$gte": 2}}).test({"items": [{"x": 3}]}) is True
-assert Query({"x": {"$regex": "^a", "$options": "i"}}).test({"x": "ABC"}) is True
+assert Query({"x": {"$regex": "^über$", "$options": "i"}}).test({"x": "Über"}) is True
 assert Query({"x": {"$eq": re.compile("^a")}}).test({"x": "abc"}) is False
 assert Query({"x": {"$mod": [3, -1]}}).test({"x": -4}) is True
 assert Query({"x.y": None}).test({"x": [1]}) is False

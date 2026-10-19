@@ -74,8 +74,10 @@ assert guarded.test({"x": value}) is False
 
 ## Recheck filters that depend on these semantics
 
-- **Regex:** matching uses Python `re` with `re.ASCII`, not MongoDB's PCRE2.
-  Character classes and case folding can change, especially for non-ASCII text.
+- **Regex:** matching uses Python `re`, not MongoDB's PCRE2. In 1.0.1, the default
+  Unicode semantics restore 0.9.0's non-ASCII case-insensitive matching; 1.0.0
+  forced `re.ASCII`. Character classes `\w`, `\d`, `\s`, and word boundaries
+  `\b` now use Unicode rules, unlike MongoDB 7 and 8 defaults.
   PCRE-only syntax is not translated; rejected patterns raise `InvalidQuery`.
   Explicit `$eq` compares compiled regexes literally; implicit regexes and regex
   entries in `$in` also match strings. Use only trusted patterns: syntax validation

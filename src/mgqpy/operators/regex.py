@@ -11,7 +11,7 @@ def _compile_regex(pattern, options=""):
     if not isinstance(options, str) or any(option not in "imsxu" for option in options):
         raise ValueError("$options must contain only i, m, s, x, or u")
     literal = pattern
-    flags = re.ASCII
+    flags = 0
     if isinstance(pattern, re.Pattern):
         if options:
             raise ValueError("options cannot be set in both a compiled regex and $options")
