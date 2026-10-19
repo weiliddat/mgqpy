@@ -62,10 +62,17 @@ def _walk(value, parts, offset, match, operand, expand_leaf, end, ends_empty):
             # still consume literal empty keys (including repeated dots).
             if ends_empty and offset + 1 == end:
                 break
+            missing_checked = False
             for child in value:
                 if isinstance(child, dict):
-                    if _walk(child, parts, offset, match, operand, expand_leaf, end, ends_empty):
-                        return True
+                    if key in child:
+                        if _walk(child[key], parts, offset + 1, match, operand, expand_leaf, end, ends_empty):
+                            return True
+                    elif not missing_checked:
+                        # Every child without the key reaches the same missing value.
+                        if match(MISSING, operand):
+                            return True
+                        missing_checked = True
             return False
         else:
             return match(MISSING, operand)
