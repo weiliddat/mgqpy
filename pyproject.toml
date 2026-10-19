@@ -24,6 +24,5 @@ testpaths = ["tests"]
 dev = [
     "pymongo>=4.15.5",
     "pytest>=9.0.2",
-    "pytest-benchmark>=5.2.3",
     "pytest-cov>=7.0.0",
 ]
