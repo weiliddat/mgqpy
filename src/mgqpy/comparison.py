@@ -35,6 +35,9 @@ _UNCONVERTED = frozenset((type(None), bool, int, float, str, bytes, bytearray, d
 _PLAIN = frozenset((type(None), int, float, str))
 # Bound once: CPython 3.11 compiles method calls on imported names as slower attribute loads.
 _all_plain = _PLAIN.issuperset
+# Above this length, certifying every member costs more than equal() needs to
+# reject at an early mismatch.
+_PLAIN_CONTAINER_LIMIT = 16
 
 
 def all_plain_operands(values) -> bool:
@@ -115,22 +118,28 @@ def prepare_equal(operand):
         members = operand.values()
     else:
         return equal
-    # Flat plain containers compare in C once the value is certified the same way.
-    if all_plain_operands(members):
+    # Small flat plain containers compare in C once the value is certified the same way.
+    if len(members) <= _PLAIN_CONTAINER_LIMIT and all_plain_operands(members):
         return _equal_plain_list if type(operand) is list else _equal_plain_dict
     return equal
 
 
 def _equal_plain_list(value, operand):
-    if type(value) is list and _all_plain(map(type, value)):
-        return value == operand
+    if type(value) is list:
+        if len(value) != len(operand):
+            return False
+        if _all_plain(map(type, value)):
+            return value == operand
     return equal(value, operand)
 
 
 def _equal_plain_dict(value, operand):
-    if type(value) is dict and _all_plain(map(type, value.values())):
-        # Python dict equality ignores key order.
-        return value == operand and all(map(operator.eq, value, operand))
+    if type(value) is dict:
+        if len(value) != len(operand):
+            return False
+        if _all_plain(map(type, value.values())):
+            # Python dict equality ignores key order.
+            return value == operand and all(map(operator.eq, value, operand))
     return equal(value, operand)
 
 
