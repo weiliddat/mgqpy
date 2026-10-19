@@ -27,6 +27,11 @@ _KINDS = {type(None): _NULL, int: _NUMBER, float: _NUMBER, Decimal: _NUMBER, str
           dict: _DOCUMENT, list: _ARRAY, bytes: _BINARY, bytearray: _BINARY, UUID: _BINARY, bool: _BOOL,
           datetime.date: _DATE, datetime.datetime: _DATE, re.Pattern: _REGEX}
 _NUMERIC_TYPES = (int, float)
+# Except NaN, exact values of these types are equal exactly when Python equality
+# says so, and never equal values of the unequal types. Values of other types
+# (natives, subclasses) may convert or compare differently.
+HASHABLE = frozenset((type(None), int, float, str))
+UNEQUAL_TO_HASHABLE = frozenset((bool, dict, list, bytes, bytearray))
 
 
 def _kind(value):

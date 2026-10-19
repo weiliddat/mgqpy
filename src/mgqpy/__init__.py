@@ -33,7 +33,7 @@ from .operators.and_or_nor import conjunction, disjunction, negate
 from .operators.elem_match import _match_elem_match, _match_elem_match_value, _match_elem_match_pair
 from .operators.eq_ne_not import _match_eq
 from .operators.exists import _match_exists
-from .operators.in_nin import _match_in
+from .operators.in_nin import _match_in, prepare_in
 from .operators.mod import _match_mod, _validate_mod
 from .operators.regex import _Regex, _match_regex, _compile_regex
 from .operators.size import _match_size, _validate_size
@@ -210,6 +210,8 @@ def _prepare_expression(value, location):
                 operands[i] = _prepare_expression(operand, f"{location}.{op}[{i}]")
             elif isinstance(operand, re.Pattern):
                 operands[i] = _compile_regex(operand)
+        if op != "$all":
+            value[op] = prepare_in(operands)
         if op == "$all":
             has_elem_match = any(_is_expression(o) for o in operands)
             if has_elem_match and not all(_is_expression(o) and set(o) == {"$elemMatch"} for o in operands):
