@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.2
 
 ### Performance
 
@@ -13,7 +13,7 @@
   exact types no longer go through native conversion.
 - `Query()` construction caches compiled field paths, precomputes regex flags,
   shares scalar-only lists and skips their per-operand preparation.
-- Results match 1.0.1; see the [measurements](benchmarks/README.md#unreleased-versus-101).
+- Results match 1.0.1; see the [measurements](benchmarks/README.md#102-versus-101).
 
 ## 1.0.1
 
