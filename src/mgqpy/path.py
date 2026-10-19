@@ -1,5 +1,6 @@
 """Compiled dotted paths and existential traversal (internal)."""
 
+from functools import lru_cache
 from typing import Any, Callable
 
 from .utils import is_array_index
@@ -10,6 +11,7 @@ Path = tuple[tuple[str, int | None], ...]
 ValueMatch = Callable[[Any, Any], bool]
 
 
+@lru_cache(maxsize=1024)
 def compile_path(path: str) -> Path:
     # Longer digit strings cannot index a Python list; keep their field spelling.
     return tuple((key, int(key) if is_array_index(key) and len(key) < 20 else None)
