@@ -66,6 +66,9 @@ The method follows the whole-stack audit and polish gate in [HISTORY.md](HISTORY
    order on the second. Package paths, retained circular package references and
    distinct `Query` classes are checked. The last source is independently imported
    once more as an **identical-source control for every case/operation**.
+   Each variant's `mgqpy` module cache is activated outside its timed blocks,
+   retaining deferred imports. Variants get separate deep copies of the fixtures;
+   untimed serialized checks reject mutations, including dictionary key order.
 2. Verify outcomes, warm each function 100 times, then calibrate on 100 calls of
    the slowest participating variant to target **5 ms process CPU time** per
    block. All variants use the same count, bounded to 20–100,000 calls.
@@ -103,6 +106,11 @@ Python. It compares **0.9.0**
 with **1.0.1**
 ([source](https://github.com/weiliddat/mgqpy/commit/8addeeec3c6aed6d534b1b2b46ecd61e3d29fd87)),
 not the unmerged `v1-performance` branch.
+
+Saved results use [runner b54687b](https://github.com/weiliddat/mgqpy/commit/b54687b0b2c0e2f8d2044cb6cea5f995ae63ff59),
+before the timed-predicate guards and per-variant module/input isolation. Both
+source refs have no deferred imports and leave the fixtures unchanged in an
+untimed reuse audit. The timed operations are unchanged; these numbers are kept.
 
 Reproduce with the defaults above (no release tags currently exist):
 

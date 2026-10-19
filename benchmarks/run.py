@@ -2,6 +2,8 @@
 """Compare git refs without installing mgqpy. Standard library only; see README.md."""
 
 import argparse
+from contextlib import contextmanager
+from copy import deepcopy
 import csv
 from datetime import datetime, timezone
 import gc
@@ -11,6 +13,7 @@ import json
 import math
 import os
 from pathlib import Path
+import pickle
 import platform
 import random
 import statistics
@@ -29,27 +32,44 @@ ROOT = HERE.parent
 OPERATIONS = ("match", "construct", "single-use")
 
 
+@contextmanager
+def activate(package):
+    """Swap this ref's imports outside timing; retain modules imported lazily."""
+    previous = {}
+    for name in list(sys.modules):
+        if name == "mgqpy" or name.startswith("mgqpy."):
+            previous[name] = sys.modules.pop(name)
+    sys.modules.update(package)
+    try:
+        yield
+    finally:
+        package.clear()
+        for name in list(sys.modules):
+            if name == "mgqpy" or name.startswith("mgqpy."):
+                package[name] = sys.modules.pop(name)
+        sys.modules.update(previous)
+
+
 def load(root):
     """Retain independent module globals, including old circular package imports."""
     source = Path(root) / "src"
-    for name in list(sys.modules):
-        if name == "mgqpy" or name.startswith("mgqpy."):
-            del sys.modules[name]
-    sys.path.insert(0, str(source))
-    try:
-        module = importlib.import_module("mgqpy")
-        for name, child in list(sys.modules.items()):
-            if name == "mgqpy" or name.startswith("mgqpy."):
-                if child.__file__ is not None:
-                    assert Path(child.__file__).resolve().is_relative_to(source)
-                else:
-                    assert all(Path(p).is_relative_to(source) for p in child.__path__)
-                if hasattr(child, "mgqpy"):
-                    assert child.mgqpy is module
-        assert Path(module.Query.__init__.__globals__["__file__"]).is_relative_to(source)
-        return module
-    finally:
-        sys.path.pop(0)
+    package = {}
+    with activate(package):
+        sys.path.insert(0, str(source))
+        try:
+            module = importlib.import_module("mgqpy")
+            for name, child in list(sys.modules.items()):
+                if name == "mgqpy" or name.startswith("mgqpy."):
+                    if child.__file__ is not None:
+                        assert Path(child.__file__).resolve().is_relative_to(source)
+                    else:
+                        assert all(Path(p).is_relative_to(source) for p in child.__path__)
+                    if hasattr(child, "mgqpy"):
+                        assert child.mgqpy is module
+            assert Path(module.Query.__init__.__globals__["__file__"]).is_relative_to(source)
+        finally:
+            sys.path.pop(0)
+    return package
 
 
 def error_outcome(phase, error):
@@ -80,14 +100,18 @@ def check(module, query, document, expected):
             "eligible": correct and validation == "ok"}, predicate
 
 
-def measure(functions, seed, config, expected):
+def measure(functions, seed, config, expected, packages):
     timers = {name: timeit.Timer(fn, timer=time.process_time) for name, fn in functions.items()}
     for name, fn in functions.items():
-        for _ in range(config["warmups"]):
-            fn()
-        if expected is not None:
-            assert fn() is expected, (name, "incorrect answer after warmup")
-    calibration = max(timer.timeit(100) / 100 for timer in timers.values())
+        with activate(packages[name]):
+            for _ in range(config["warmups"]):
+                fn()
+            if expected is not None:
+                assert fn() is expected, (name, "incorrect answer after warmup")
+    calibration = 0
+    for name, timer in timers.items():
+        with activate(packages[name]):
+            calibration = max(calibration, timer.timeit(100) / 100)
     loops = max(20, min(100_000, int(config["seconds"] / max(calibration, 1e-9))))
     samples = {name: [] for name in timers}
     rng = random.Random(seed)
@@ -95,12 +119,14 @@ def measure(functions, seed, config, expected):
         order = list(timers)
         rng.shuffle(order)
         for name in order:
-            # timeit disables GC only while timing. Destruction is included.
-            samples[name].append(timers[name].timeit(loops) * 1e6 / loops)
+            with activate(packages[name]):
+                # timeit disables GC only while timing. Destruction is included.
+                samples[name].append(timers[name].timeit(loops) * 1e6 / loops)
         gc.collect()
     if expected is not None:
         for name, fn in functions.items():
-            assert fn() is expected, (name, "incorrect answer after timing")
+            with activate(packages[name]):
+                assert fn() is expected, (name, "incorrect answer after timing")
     return {"loops": loops, "samples_us": samples}
 
 
@@ -112,34 +138,42 @@ def worker(config, reverse):
         os.sched_setaffinity(0, {affinity})
     slots = list(config["sources"])
     order = list(reversed(slots)) if reverse else slots
-    modules = {name: load(config["sources"][name]) for name in order}
-    assert len({id(module.Query) for module in modules.values()}) == len(modules)
+    packages = {name: load(config["sources"][name]) for name in order}
+    assert len({id(package["mgqpy"].Query) for package in packages.values()}) == len(packages)
     rows = []
     for index, (name, query, document, expected) in cases(config["cases"]):
+        # Serialization preserves dict order and handles NaNs without equality.
+        pristine = pickle.dumps((query, document))
+        inputs = {slot: deepcopy((query, document)) for slot in slots}
         statuses, predicates = {}, {}
         for slot in slots:
-            statuses[slot], predicates[slot] = check(modules[slot], query, document, expected)
+            with activate(packages[slot]):
+                statuses[slot], predicates[slot] = check(packages[slot]["mgqpy"], *inputs[slot], expected)
         row = {"name": name, "expected": expected, "status": statuses, "timings": {}}
         if not config["check"]:
             for operation in config["operations"]:
                 functions = {}
                 for slot in slots:
-                    cls, predicate = modules[slot].Query, predicates[slot]
+                    cls, predicate = packages[slot]["mgqpy"].Query, predicates[slot]
+                    q, d = inputs[slot]
                     if operation == "construct" and predicate is not None:
-                        functions[slot] = lambda cls=cls, q=query: cls(q)
+                        functions[slot] = lambda cls=cls, q=q: cls(q)
                     elif statuses[slot]["eligible"]:
                         if operation == "match":
-                            functions[slot] = lambda p=predicate, d=document: p.test(d)
+                            functions[slot] = lambda p=predicate, d=d: p.test(d)
                         else:
-                            functions[slot] = lambda cls=cls, q=query, d=document: cls(q).test(d)
+                            functions[slot] = lambda cls=cls, q=q, d=d: cls(q).test(d)
                 if functions:
                     seed = 4361 + index + 1000 * OPERATIONS.index(operation)
                     row["timings"][operation] = measure(
-                        functions, seed, config, None if operation == "construct" else expected)
+                        functions, seed, config, None if operation == "construct" else expected, packages)
             # A warm cache or a timed operation must not change the answer.
             for slot in slots:
-                after, _ = check(modules[slot], query, document, expected)
+                with activate(packages[slot]):
+                    after, _ = check(packages[slot]["mgqpy"], *inputs[slot], expected)
                 assert after == statuses[slot], (name, slot, statuses[slot], after)
+        for slot in slots:
+            assert pickle.dumps(inputs[slot]) == pristine, (name, slot, "mutated query/document")
         rows.append(row)
         if index % 30 == 0:
             print(f"  {index}: {name}", flush=True)

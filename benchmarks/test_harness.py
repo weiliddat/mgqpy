@@ -128,3 +128,73 @@ def test_cli_rejects_colliding_output_paths_before_running(repository, suffix):
     assert result.returncode == 2
     assert "--output" in result.stderr and ".csv" in result.stderr
     assert output.read_text() == "keep existing output"
+
+
+def test_cli_keeps_deferred_imports_and_their_cache_local_to_each_ref(repository):
+    root, _ = repository
+    refs = []
+    for value in (1000, 1):
+        (root / "src/mgqpy/helper.py").write_text(f"VALUE = {value}\nTOKEN = object()\n")
+        (root / "src/mgqpy/__init__.py").write_text(f'''
+VERSION = {value}
+class Query:
+    def __init__(self, query):
+        from mgqpy.helper import VALUE
+        assert VALUE == VERSION
+        self.query = query
+        self.token = None
+    def validate(self):
+        from mgqpy.helper import VALUE
+        assert VALUE == VERSION
+    def test(self, document):
+        from mgqpy.helper import TOKEN, VALUE
+        if self.token is None:
+            self.token = TOKEN
+        return (VALUE == VERSION and TOKEN is self.token
+                and document.get("x") == self.query["x"])
+''')
+        subprocess.run(["git", "add", "src"], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", "deferred imports"], cwd=root, check=True)
+        refs.append(subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip())
+    output = root / "result.json"
+    subprocess.run([
+        sys.executable, "benchmarks/run.py", *refs, "--cases", "flat", "--warmups", "1",
+        "--blocks", "2", "--seconds", ".0001", "--output", str(output),
+    ], cwd=root, check=True)
+    data = json.loads(output.read_text())
+    assert all(status["eligible"] for run in data["runs"]
+               for status in run["rows"][0]["status"].values())
+    for operation in ("match", "construct", "single-use"):
+        assert "1" in data["results"][0]["timings"][operation]["paired_ratio"]
+
+
+@pytest.mark.parametrize("case,mutation", [
+    ("large-in", 'self.query["x"]["$in"].append(-1)'),
+    ("numeric-last", 'document["x"].sort(reverse=True)'),
+    ("ordered-document", 'document["x"]["a"] = document["x"].pop("a")'),
+])
+def test_cli_rejects_input_mutation_even_when_the_answer_is_unchanged(repository, case, mutation):
+    root, _ = repository
+    refs = []
+    for mutates in (False, True):
+        (root / "src/mgqpy/__init__.py").write_text(f'''
+class Query:
+    def __init__(self, query):
+        self.query = query
+        self.calls = 0
+    def test(self, document):
+        self.calls += 1
+        if self.calls == 2 and {mutates}:
+            {mutation}
+        return True
+''')
+        subprocess.run(["git", "add", "src"], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", "input mutation"], cwd=root, check=True)
+        refs.append(subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip())
+    output = root / "result.json"
+    result = subprocess.run([
+        sys.executable, "benchmarks/run.py", *refs, "--cases", case, "--operations", "match",
+        "--warmups", "1", "--blocks", "1", "--seconds", ".0001", "--output", str(output),
+    ], cwd=root, capture_output=True, text=True)
+    assert result.returncode != 0
+    assert not output.exists()
