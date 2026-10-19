@@ -90,3 +90,41 @@ def test_cli_checks_without_timing_and_requires_acknowledging_last_ref_differenc
     data = json.loads((root / "check.json").read_text())
     assert data["results"][0]["timings"] == {}
     assert subprocess.run(command + ["--allow-differences"], cwd=root).returncode == 0
+
+
+@pytest.mark.parametrize("reuse_limit", [1, 10])
+def test_cli_rejects_a_reused_predicate_that_stops_matching(repository, reuse_limit):
+    root, refs = repository
+    (root / "src/mgqpy/__init__.py").write_text(f'''
+class Query:
+    def __init__(self, query):
+        self.calls = 0
+    def test(self, document):
+        self.calls += 1
+        return self.calls <= {reuse_limit}
+''')
+    subprocess.run(["git", "add", "src"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-qm", "stateful predicate"], cwd=root, check=True)
+    output = root / "result.json"
+    result = subprocess.run([
+        sys.executable, "benchmarks/run.py", refs[0], "HEAD", "--cases", "flat",
+        "--operations", "match", "--warmups", "1", "--blocks", "1",
+        "--seconds", ".0001", "--output", str(output),
+    ], cwd=root, capture_output=True, text=True)
+    assert result.returncode != 0
+    assert not output.exists()  # Never publish a ratio for the changed answer.
+
+
+@pytest.mark.parametrize("suffix", [".csv", ".CSV"])
+def test_cli_rejects_colliding_output_paths_before_running(repository, suffix):
+    root, refs = repository
+    output = root / ("result" + suffix)
+    output.write_text("keep existing output")
+    result = subprocess.run([
+        sys.executable, "benchmarks/run.py", refs[0], refs[0], "--cases", "flat",
+        "--operations", "match", "--warmups", "1", "--blocks", "1",
+        "--seconds", ".0001", "--output", str(output),
+    ], cwd=root, capture_output=True, text=True)
+    assert result.returncode == 2
+    assert "--output" in result.stderr and ".csv" in result.stderr
+    assert output.read_text() == "keep existing output"

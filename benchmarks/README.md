@@ -84,6 +84,10 @@ absolute/control timings even with the minimum count. Compare nearby release
 refs when investigating small costs; the 0.9/1.0.1 run establishes broad changes,
 not a precision bound on every sub-microsecond workload.
 
+A case whose ratio is within or near that interpreter's same-source control range
+for the operation is inconclusive and needs a focused nearby-ref recheck. This is
+a recheck convention, not a pass/fail threshold or a confidence interval.
+
 Report individual regressions, including full scans and early rejections. Do not
 hide them in an average speedup. Recheck suspected small regressions with six
 fresh processes/16 blocks and inspect identical-source variation. Keep the initial

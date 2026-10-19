@@ -80,11 +80,13 @@ def check(module, query, document, expected):
             "eligible": correct and validation == "ok"}, predicate
 
 
-def measure(functions, seed, config):
+def measure(functions, seed, config, expected):
     timers = {name: timeit.Timer(fn, timer=time.process_time) for name, fn in functions.items()}
-    for fn in functions.values():
+    for name, fn in functions.items():
         for _ in range(config["warmups"]):
             fn()
+        if expected is not None:
+            assert fn() is expected, (name, "incorrect answer after warmup")
     calibration = max(timer.timeit(100) / 100 for timer in timers.values())
     loops = max(20, min(100_000, int(config["seconds"] / max(calibration, 1e-9))))
     samples = {name: [] for name in timers}
@@ -96,6 +98,9 @@ def measure(functions, seed, config):
             # timeit disables GC only while timing. Destruction is included.
             samples[name].append(timers[name].timeit(loops) * 1e6 / loops)
         gc.collect()
+    if expected is not None:
+        for name, fn in functions.items():
+            assert fn() is expected, (name, "incorrect answer after timing")
     return {"loops": loops, "samples_us": samples}
 
 
@@ -129,7 +134,8 @@ def worker(config, reverse):
                             functions[slot] = lambda cls=cls, q=query, d=document: cls(q).test(d)
                 if functions:
                     seed = 4361 + index + 1000 * OPERATIONS.index(operation)
-                    row["timings"][operation] = measure(functions, seed, config)
+                    row["timings"][operation] = measure(
+                        functions, seed, config, None if operation == "construct" else expected)
             # A warm cache or a timed operation must not change the answer.
             for slot in slots:
                 after, _ = check(modules[slot], query, document, expected)
@@ -212,6 +218,8 @@ def main():
         return 0
     if len(args.refs) < 2 or args.output is None:
         parser.error("provide at least two refs and --output")
+    if args.output.suffix.lower() == ".csv":
+        parser.error("--output must not end in .csv; JSON and CSV paths would collide")
     if (args.processes < 2 or args.processes % 2 or args.blocks < 1 or args.warmups < 0
             or not math.isfinite(args.seconds) or args.seconds <= 0):
         parser.error("use an even process count >= 2, blocks >= 1, warmups >= 0 and seconds > 0")
