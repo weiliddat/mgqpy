@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "mgqpy"
-version = "1.0.0"
+version = "1.0.1"
 description = "mongo query as a predicate function"
 authors = [{ name = "Chiawei Ong", email = "ongchiawei@gmail.com" }]
 license = { file = "LICENSE" }

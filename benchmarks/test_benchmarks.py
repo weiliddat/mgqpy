@@ -16,6 +16,8 @@ CASES = [
     ("subdocuments", {"items.x": 73}, {"items": [{"x": i} for i in range(100)]}),
     ("large-in", {"x": {"$in": list(range(1000))}}, {"x": 999}),
     ("regex", {"x": {"$regex": "^item-[0-9]+$"}}, {"x": "item-73"}),
+    ("regex-unicode-ignorecase", {"x": {"$regex": "^über$", "$options": "i"}}, {"x": "Über"}),
+    ("regex-unicode-class", {"x": {"$regex": r"^\w+$"}}, {"x": "äpfel"}),
     ("and-or", {"$and": [{"x": {"$gt": 10}}, {"$or": [{"y": 0}, {"y": 2}]}]},
      {"x": 73, "y": 2}),
     ("indexed-eq", {"a.9.x": 73}, {"a": [{"x": i} for i in range(9)] + [{"x": 73}]}),

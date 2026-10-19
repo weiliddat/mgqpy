@@ -3,7 +3,7 @@ import pytest
 
 from mgqpy import Query
 
-from .helpers import get_mongo_results, get_filter_results
+from .helpers import assert_matches, get_mongo_results, get_filter_results
 
 testcases = [
     (
@@ -220,21 +220,50 @@ def test_mgqpy_regex(test_db, name, query, input, expected):
     assert actual == expected, name
 
 
-@pytest.mark.parametrize("expression,expected_values", [
-    ({"$regex": r"^\w+$"}, ["abc", "a", "2", "a\n"]),
-    (re.compile(r"^\w+$"), ["abc", "a", "2", "a\n"]),
-    ({"$in": [re.compile(r"^\w+$")]}, ["abc", "a", "2", "a\n"]),
-    ({"$not": re.compile(r"^\w+$")}, ["é", "١", ""]),
-    ({"$regex": r"^\d+$", "$options": "u"}, ["2"]),
-    ({"$regex": re.compile(r"^\d+$")}, ["2"]),
-    ({"$regex": "(?P<word>a)"}, ["abc", "a", "a\n"]),
+@pytest.mark.parametrize("expression,values,hits", [
+    ({"$regex": "äpfel", "$options": "i"}, ["Äpfel", "Apfel", "äpfel"], [0, 2]),
+    ({"$regex": "öl", "$options": "i"}, ["Ölfilter", "Olfilter", "Olivenöl"], [0, 2]),
+    ({"$regex": "^über$", "$options": "i"}, ["Über", "ÜBER", "Überraschung", "uber"], [0, 1]),
+    ({"$regex": "^ß$", "$options": "i"}, ["ß", "SS", "ss"], [0]),
+    (re.compile("äpfel", re.I), ["Äpfel", ["Apfel", "Äpfel"], "Apfel"], [0, 1]),
+    ({"$regex": re.compile("^über$", re.I)}, ["Über", "überall"], [0]),
+    ({"$in": [re.compile("öl", re.I)]}, ["Ölfilter", ["Olfilter", "Ölfilter"], "Olfilter"], [0, 1]),
+    ({"$nin": [re.compile("öl", re.I)]}, ["Ölfilter", ["Olfilter", "Ölfilter"], "Olfilter"], [2]),
+    ({"$not": re.compile("äpfel", re.I)}, ["Äpfel", "Apfel"], [1]),
+    ({"$all": [re.compile("öl", re.I)]}, ["Ölfilter", ["Ölfilter"], "Olfilter"], [0, 1]),
+    ({"$all": [re.compile("öl", re.I), re.compile("filter$")]},
+     [["Ölfilter"], ["Öl", "filter"], ["Olfilter"]], [0, 1]),
+    ({"$elemMatch": {"$regex": "^über$", "$options": "i"}},
+     [["Über"], ["Überraschung"], [["Über"]]], [0]),
+    ({"$regex": "(?P<word>a)"}, ["abc", "a", "2", "é", "١", "a\n", ""], [0, 1, 5]),
 ])
-def test_regex_subset_against_mongo(test_db, expression, expected_values):
-    documents = [{"x": value} for value in ["abc", "a", "2", "é", "١", "a\n", ""]]
-    expected = [{"x": value} for value in expected_values]
+def test_regex_subset_against_mongo(test_db, expression, values, hits):
+    assert_matches(test_db, {"x": expression}, [{"x": value} for value in values], hits)
+
+
+@pytest.mark.parametrize("pattern,values,python_hits,mongo_hits", [
+    (r"^\w+$", ["abc", "é", "١", "!", ""], [0, 1, 2], [0]),
+    (r"^\d+$", ["2", "١", "é", ""], [0, 1], [0]),
+    (r"^\s+$", [" ", "\u00a0", "\u2003", "x", ""], [0, 1, 2], [0]),
+    (r"^\b(?:é|a)\b$", ["é", "a", "!", ""], [0, 1], [1]),
+])
+@pytest.mark.parametrize("mode", ["$regex", "compiled", "implicit", "$in", "$not"])
+def test_unicode_classes_are_an_accepted_mongo_difference(
+    test_db, pattern, values, python_hits, mongo_hits, mode,
+):
+    compiled = re.compile(pattern)
+    expression = {
+        "$regex": {"$regex": pattern, "$options": "u"},
+        "compiled": {"$regex": compiled}, "implicit": compiled,
+        "$in": {"$in": [compiled]}, "$not": {"$not": compiled},
+    }[mode]
+    if mode == "$not":
+        python_hits = [i for i in range(len(values)) if i not in python_hits]
+        mongo_hits = [i for i in range(len(values)) if i not in mongo_hits]
+    documents = [{"x": value} for value in values]
     query = {"x": expression}
-    assert get_mongo_results(test_db, query, documents) == expected
-    assert get_filter_results(Query(query).test, documents) == expected
+    assert get_mongo_results(test_db, query, documents) == [documents[i] for i in mongo_hits]
+    assert get_filter_results(Query(query).test, documents) == [documents[i] for i in python_hits]
 
 
 @pytest.mark.parametrize("flags", [0, re.I, re.A])
@@ -251,11 +280,14 @@ def test_regex_literals_keep_original_flags(test_db, flags, operator):
         {"case": "other-flags", "x": other}, {"case": "ascii", "x": "ABC"},
         {"case": "unicode", "x": "é"}, {"case": "missing"},
     ]
-    expected = (["other-flags", "unicode", "missing"] if operator in ("$nin", "$not")
-                else ["literal", "array", "ascii"])
+    mongo_hits = ["literal", "array", "ascii"]
+    python_hits = mongo_hits if flags & re.ASCII else mongo_hits + ["unicode"]
+    if operator in ("$nin", "$not"):
+        mongo_hits = [d["case"] for d in documents if d["case"] not in mongo_hits]
+        python_hits = [d["case"] for d in documents if d["case"] not in python_hits]
     query = {"x": expression}
-    assert [d["case"] for d in get_mongo_results(test_db, query, documents)] == expected
-    assert [d["case"] for d in get_filter_results(Query(query).test, documents)] == expected
+    assert [d["case"] for d in get_mongo_results(test_db, query, documents)] == mongo_hits
+    assert [d["case"] for d in get_filter_results(Query(query).test, documents)] == python_hits
 
 
 @pytest.mark.parametrize("expression", [{"$regex": r"a\0b"}, re.compile(r"a\0b")])

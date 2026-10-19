@@ -132,10 +132,13 @@ Do not combine options in a compiled pattern with nonempty `$options`.
 Patterns compile when constructing `Query`, including implicit regexes, `$not`,
 and regex entries in `$in`/`$nin`.
 
-Matching uses `re.ASCII`: `\w`, `\d`, and word boundaries have ASCII semantics,
-consistent with MongoDB 7 and 8 defaults. This also limits Python's whitespace
-classes and case-insensitive matching; non-ASCII case folding can differ from
-MongoDB. Inline Unicode modes and PCRE-only features are not portable.
+Matching uses Python's default Unicode semantics. Case-insensitive patterns match
+non-ASCII text: `"^über$"` with `$options: "i"` matches `"Über"`. Like MongoDB,
+this does not expand `ß` to `SS`.
+Unlike MongoDB 7 and 8 defaults, `\w`, `\d`, `\s`, and `\b` use Unicode word,
+digit, whitespace, and word-boundary rules. Python's global regex flags cannot
+combine Unicode case folding with ASCII-only classes; mgqpy keeps Unicode matching.
+Explicit ASCII modes in supplied patterns still follow Python `re`.
 Use Python named groups `(?P<name>...)`; PCRE spelling `(?<name>...)` is rejected,
 not rewritten (a textual replacement could change escaped text or character classes).
 Use syntax supported by your Python version; this is not full regex compatibility.
@@ -145,7 +148,7 @@ An actual NUL character in a pattern is rejected; escaped syntax such as
 
 An implicit compiled regex or a regex in `$in` matches strings as a pattern.
 It also compares regex-valued fields literally, retaining the original pattern
-and flags separately from the ASCII string matcher.
+and flags separately from the string matcher.
 Explicit `$eq` with a compiled regex compares the regex as a literal value.
 
 **Patterns must come from trusted sources.** Validation checks syntax, not runtime

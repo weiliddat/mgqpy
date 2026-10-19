@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.1
+
+- Restore 0.9.0's Unicode case-insensitive regex matching, broken by 1.0.0's
+  forced `re.ASCII`. For example, `"äpfel"` matches `"Äpfel"` with `$options: "i"`.
+- Regex classes `\w`, `\d`, `\s`, and word boundaries `\b` now use Python's
+  default Unicode semantics, an accepted difference from MongoDB 7 and 8's
+  ASCII-only defaults. `ß` versus `SS` remains a non-match.
+- Regex literal identity, validation, and the trusted-pattern requirement are unchanged.
+
 ## 1.0.0
 
 Changes from 0.9.0, implemented in [#12](https://github.com/weiliddat/mgqpy/pull/12),
