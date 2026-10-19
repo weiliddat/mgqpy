@@ -7,10 +7,11 @@ class _Regex(NamedTuple):
     matcher: re.Pattern
 
 
-# Plain ints: RegexFlag arithmetic costs microseconds per operation.
-_UNICODE = int(re.UNICODE)
+# Plain ints: RegexFlag arithmetic costs microseconds per operation. The masks
+# keep RegexFlag's inversion, which on Python 3.11+ covers only defined flags.
 _OPTION_FLAGS = {"i": int(re.I), "m": int(re.M), "s": int(re.S), "x": int(re.X), "u": 0}
-_PATTERN_FLAGS = int(re.IGNORECASE | re.MULTILINE | re.DOTALL | re.VERBOSE | re.UNICODE | re.ASCII)
+_UNSUPPORTED = int(~(re.IGNORECASE | re.MULTILINE | re.DOTALL | re.VERBOSE | re.UNICODE | re.ASCII))
+_NOT_UNICODE = int(~re.UNICODE)
 
 
 def _compile_regex(pattern, options=""):
@@ -21,9 +22,9 @@ def _compile_regex(pattern, options=""):
     if isinstance(pattern, re.Pattern):
         if options:
             raise ValueError("options cannot be set in both a compiled regex and $options")
-        if pattern.flags & ~_PATTERN_FLAGS:
+        if pattern.flags & _UNSUPPORTED:
             raise ValueError("unsupported compiled regex flags")
-        flags |= pattern.flags & ~_UNICODE
+        flags |= pattern.flags & _NOT_UNICODE
         pattern = pattern.pattern
     if not isinstance(pattern, str):
         raise TypeError("regex pattern must be a string or a compiled string regex")

@@ -1,7 +1,9 @@
 import re
+import sys
+
 import pytest
 
-from mgqpy import Query
+from mgqpy import InvalidQuery, Query
 
 from .helpers import assert_matches, get_mongo_results, get_filter_results
 
@@ -296,3 +298,17 @@ def test_escaped_null_is_valid_regex_syntax(test_db, expression):
     documents = [{"x": "a\0b"}, {"x": r"a\0b"}]
     assert get_mongo_results(test_db, query, documents) == documents[:1]
     assert get_filter_results(Query(query).test, documents) == documents[:1]
+
+
+@pytest.mark.parametrize("extra", [0, re.I])
+def test_undefined_compiled_regex_flags_follow_regexflag_inversion(extra):
+    # Python 3.11+ inverts RegexFlag within the defined flags, so 512 is not
+    # rejected there and is dropped before recompiling.
+    pattern = re.compile("a", 512 | extra)
+    if sys.version_info < (3, 11):
+        with pytest.raises(InvalidQuery):
+            Query({"x": pattern})
+        return
+    query = Query({"x": pattern})
+    assert query.test({"x": "a"}) is True
+    assert query.test({"x": "A"}) is bool(extra)
