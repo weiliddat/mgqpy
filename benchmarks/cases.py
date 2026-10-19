@@ -1,13 +1,15 @@
-"""Opt-in CPU-only baselines; run `uv run pytest benchmarks`."""
+"""Versioned CPU workloads. Expectations are independent of the timed sources.
+
+The original 202 matching fixtures, 56 whole-stack audit additions, and PR #21
+review controls are kept together so every ref runs exactly the same inputs.
+See README.md for the claim-to-case inventory and provenance.
+"""
 
 from datetime import date
 from decimal import Decimal
 import re
+import sys
 from uuid import UUID
-
-import pytest
-
-from mgqpy import Query
 
 
 CASES = [
@@ -231,12 +233,129 @@ for shape, value in (("scalar", Decimal("sNaN")), ("scan", [Decimal("sNaN")] * 1
     MATCH_CASES.append((f"mod-snan-{shape}", {"x": {"$mod": [3, 0]}}, {"x": value}, False))
 
 
-@pytest.mark.parametrize("name,query,doc,expected", MATCH_CASES, ids=[case[0] for case in MATCH_CASES])
-def test_match(benchmark, name, query, doc, expected):
-    predicate = Query(query)
-    assert benchmark(predicate.test, doc) is expected
+# Whole-stack audit additions (also used by the 1.0.2 author).
+MATCH_CASES.extend([
+    ("flat-miss", {"x": 73}, {"x": 0}, False),
+    ("flat-missing", {"x": 73}, {}, False),
+    ("deep-miss", {"a.b.c.d.e": 73}, {"a": {"b": {"c": {"d": {"e": 0}}}}}, False),
+    ("deep-missing", {"a.b.c.d.e": 73}, {"a": {}}, False),
+])
+for name, expression, hit, miss in (
+    ("numeric", {"$gt": 72}, 73, 0),
+    ("mixed", {"$gt": 72.0}, 73, 0),
+    ("mod-scan", {"$mod": [3, 1]}, 1, 0),
+    ("regex-scan", {"$regex": "^target$"}, "target", "other"),
+    ("implicit-regex", re.compile("^target$"), "target", "other"),
+    ("date-scan", "2024-08-01", date(2024, 8, 1), date(2024, 7, 31)),
+    ("uuid-scan", "0123456789abcdef0123456789abcdef",
+     UUID("0123456789abcdef0123456789abcdef"), UUID(int=0)),
+    ("elem-document", {"$elemMatch": {"a": 73}}, {"a": 73}, {"a": 0}),
+    ("document-scan", {"a": 1, "b": 2}, {"a": 1, "b": 2}, {"a": 1, "b": 3}),
+    ("document-range-scan", {"$gt": {"a": 72}}, {"a": 73}, {"a": 0}),
+    ("array-range-scan", {"$lt": [72]}, [0], [99]),
+):
+    for label, position in (("early", 0), ("last", 99), ("miss", None)):
+        values = [miss] * 100
+        if position is not None:
+            values[position] = hit
+        MATCH_CASES.append((name + "-" + label, {"x": expression}, {"x": values}, position is not None))
+
+for label, index in (("early", 0), ("last", 999), ("miss", 1000)):
+    MATCH_CASES.append(("in-1000-" + label, {"x": {"$in": list(range(1000))}},
+                        {"x": index}, index < 1000))
+
+for name, position, expected in (("and-early", 0, False), ("and-last", 99, False),
+                                ("and-hit", None, True), ("or-early", 0, True),
+                                ("or-last", 99, True), ("or-miss", None, False)):
+    is_and = name.startswith("and")
+    children = [{"x" + str(i): 1} for i in range(100)]
+    document = {"x" + str(i): int(is_and) for i in range(100)}
+    if position is not None:
+        document["x" + str(position)] = int(not is_and)
+    MATCH_CASES.append((name, {"$and" if is_and else "$or": children}, document, expected))
+
+for label, position in (("early", 0), ("last", 99), ("miss", None)):
+    values = [{"y": 0}] * 100
+    if position is not None:
+        values[position] = {"y": 73}
+    MATCH_CASES.append(("subdocs-" + label, {"x.y": 73}, {"x": values}, position is not None))
+    values = [{"y": 0}] * 100
+    if position is not None:
+        values[position] = {"73": {"y": 73}}
+    MATCH_CASES.append(("index-alternative-" + label, {"x.73.y": 73}, {"x": values}, position is not None))
+
+MATCH_CASES.extend([
+    ("ordered-key-mismatch", {"x": {"a": 1, "b": 2}}, {"x": {"b": 2, "a": 1}}, False),
+    ("mod-negative", {"x": {"$mod": [3, -1]}}, {"x": -4}, True),
+    ("array-range-element-miss", {"x.0": {"$gt": [1, 2]}}, {"x": [[1, 1]]}, False),
+    ("document-range-key", {"x": {"$gt": {"a": 0}}}, {"x": {"b": 0}}, True),
+])
+
+# PR #21 review. Existing document-scan-* and in-1000-* cover duplicate rows.
+MATCH_CASES.extend([
+    ("review-wide-and", {"$and": [{f"x{i}": 1} for i in range(100)]}, {"x0": 0}, False),
+    ("review-compiled-regex", {"x": re.compile("^über$", re.I)}, {"x": "Über"}, True),
+    ("review-flat-list", {"x": {"$eq": [1, None, 3.0]}}, {"x": [1, None, 3]}, True),
+])
+for count in (1, 2, 10):
+    for position in sorted({0, count - 1, count}):
+        MATCH_CASES.append((f"review-in-{count}-{position}", {"x": {"$in": list(range(count))}},
+                            {"x": position}, position < count))
+
+for count in (100, 1000, 3000):
+    # Exact Python ints with identical hashes; intentionally outside BSON int64.
+    values = [i * sys.hash_info.modulus for i in range(count)]
+    for op in ("in", "nin"):
+        MATCH_CASES.append((f"review-{op}-collisions-{count}", {"x": {"$" + op: values}},
+                            {"x": values[-1]}, op == "in"))
+
+for count in (100, 1000, 10_000):
+    dictionary = {f"a{i}": 1 for i in range(count)}
+    MATCH_CASES.extend([
+        (f"review-wide-dict-empty-{count}", {"x": {}}, {"x": dictionary}, False),
+        (f"review-wide-list-empty-{count}", {"x.0": {"$eq": []}}, {"x": [[1] * count]}, False),
+        (f"review-wide-dict-first-mismatch-{count}", {"x": {**dictionary, "a0": 0}},
+         {"x": dictionary}, False),
+        (f"review-wide-list-first-mismatch-{count}", {"x.0": {"$eq": [0] + [1] * (count - 1)}},
+         {"x": [[1] * count]}, False),
+        # Whole-document width, distinct from comparing a wide embedded value.
+        (f"wide-document-hit-{count}", {f"a{count - 1}": 1}, dictionary, True),
+        (f"wide-document-miss-{count}", {"absent": 1}, dictionary, False),
+        (f"construct-in-{count}", {"x": {"$in": list(range(count))}}, {"x": count - 1}, True),
+        (f"construct-and-{count}", {"$and": [{f"a{i}": 1} for i in range(count)]},
+         {"a0": 0}, False),
+    ])
 
 
-@pytest.mark.parametrize("name,query,doc", CASES, ids=[case[0] for case in CASES])
-def test_construct(benchmark, name, query, doc):
-    assert benchmark(Query, query).test(doc) is True
+class FoldKey(str):
+    """The PR #21 thermos result-changing key control."""
+
+    def __eq__(self, other):
+        return self.casefold() == str(other).casefold()
+
+    def __hash__(self):
+        return hash(self.casefold())
+
+
+MATCH_CASES.extend([
+    ("review-subclass-key-eq", {"x": {"$eq": {"a": 1}}}, {"x": {FoldKey("A"): 1}}, False),
+    ("review-subclass-key-ne", {"x": {"$ne": {"a": 1}}}, {"x": {FoldKey("A"): 1}}, True),
+])
+
+# Same-type/deep controls reconstructed from the original mixed-numeric gate.
+for op, hit in (("$gt", 73), ("$gte", 72), ("$lt", 71), ("$lte", 72)):
+    for label, cast in (("int", int), ("float", float)):
+        MATCH_CASES.append((f"{op[1:]}-{label}-{label}-scalar", {"x": {op: cast(72)}},
+                            {"x": cast(hit)}, True))
+MATCH_CASES.append(("deep-mixed-range", {"a.b.c.d.x": {"$gt": 72}},
+                    {"a": {"b": {"c": {"d": {"x": 73.0}}}}}, True))
+
+assert len({row[0] for row in MATCH_CASES}) == len(MATCH_CASES)
+
+
+def cases(filters=()):
+    """Select by shell-style case-name glob, retaining stable seed positions."""
+    from fnmatch import fnmatchcase
+
+    return [(index, row) for index, row in enumerate(MATCH_CASES)
+            if not filters or any(fnmatchcase(row[0], pattern) for pattern in filters)]

@@ -340,8 +340,9 @@ database per run/worker and collection per case, clean up only their namespaces,
 and close the client. CI tests Python 3.10–3.13 against MongoDB 7 and 8, including
 an isolated installed-wheel smoke test.
 
-Correctness tests do not run benchmarks. Run `uv run pytest benchmarks` explicitly
-for CPU-only matching and construction benchmarks; see [the baseline](benchmarks/README.md).
+Correctness tests do not run performance benchmarks. Use `python benchmarks/run.py`
+to compare git refs; see [the baseline](benchmarks/README.md) for commands, cases,
+construction/matching/single-use results and historical measurements.
 
 Amp orbs use `.agents/setup` to install the locked Python dependencies and a
 native MongoDB 7 server into the reusable project snapshot. `.agents/resume`
