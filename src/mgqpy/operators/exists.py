@@ -1,6 +1,8 @@
 import numbers
 from typing import List
 
+from mgqpy.utils import is_array_index
+
 
 def _match_exists(doc, path: List[str], ov) -> bool:
     # MongoDB reads only false, null and numeric zero as false; "", [] and {} are true
@@ -19,8 +21,10 @@ def _path_exists(doc, path: List[str]) -> bool:
         return key in doc and _path_exists(doc[key], rest)
 
     if isinstance(doc, list):
-        if key.isdigit() and int(key) < len(doc) and _path_exists(doc[int(key)], rest):
+        if is_array_index(key) and int(key) < len(doc) and _path_exists(doc[int(key)], rest):
             return True
-        return any(_path_exists(d, path) for d in doc if isinstance(d, dict))
+        for d in doc:
+            if isinstance(d, dict) and _path_exists(d, path):
+                return True
 
     return False

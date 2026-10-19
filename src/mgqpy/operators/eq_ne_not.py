@@ -1,18 +1,22 @@
-import re
 from typing import List
 
-from mgqpy.utils import coerce
+from mgqpy.operators.regex import _Regex
+from mgqpy.utils import coerce, is_array_index
 
 import mgqpy
 
 
 def _match_eq(doc, path: List[str], ov) -> bool:
-    if len(path) == 0:
-        if isinstance(doc, list) and any([_match_eq(d, path, ov) for d in doc]):
-            return True
+    if not path:
+        if isinstance(doc, list):
+            for d in doc:
+                if _match_eq(d, path, ov):
+                    return True
 
-        if isinstance(ov, re.Pattern) and isinstance(doc, str):
-            return bool(ov.search(doc))
+        if isinstance(ov, _Regex):
+            if isinstance(doc, str):
+                return bool(ov.matcher.search(doc))
+            ov = ov.literal
 
         doc, ov = coerce(doc, ov)
         return doc == ov
@@ -23,13 +27,16 @@ def _match_eq(doc, path: List[str], ov) -> bool:
     if isinstance(doc, dict) and key in doc:
         return _match_eq(doc[key], rest, ov)
 
-    if isinstance(doc, list) and key.isdigit():
+    if isinstance(doc, list) and is_array_index(key):
         idx = int(key)
         if idx < len(doc):
             return _match_eq(doc[idx], rest, ov)
 
     if isinstance(doc, list):
-        return any([_match_eq(d, path, ov) for d in doc])
+        for d in doc:
+            if _match_eq(d, path, ov):
+                return True
+        return False
 
     if ov is None:
         return True

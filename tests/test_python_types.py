@@ -18,6 +18,45 @@ import pytest
 
 from mgqpy import Query
 
+from .helpers import get_mongo_results, get_filter_results
+
+
+@pytest.mark.parametrize("operand,cast", [(72, float), (72.0, int)])
+@pytest.mark.parametrize("op,expected", [
+    ("$gt", ["above", "last"]),
+    ("$gte", ["equal", "above", "last"]),
+    ("$lt", ["below", "last"]),
+    ("$lte", ["below", "equal", "last"]),
+])
+def test_mixed_numeric_ranges(test_db, operand, cast, op, expected):
+    miss, hit = (0, 73) if op in ("$gt", "$gte") else (99, 71)
+    documents = [
+        {"case": "below", "x": cast(71)},
+        {"case": "equal", "x": cast(72)},
+        {"case": "above", "x": cast(73)},
+        {"case": "last", "x": [cast(miss)] * 99 + [cast(hit)]},
+        {"case": "miss", "x": [cast(miss)] * 100},
+    ]
+    query = {"x": {op: operand}}
+    assert [d["case"] for d in get_mongo_results(test_db, query, documents)] == expected
+    assert [d["case"] for d in get_filter_results(Query(query).test, documents)] == expected
+
+
+@pytest.mark.parametrize("op,above,below", [
+    ("$gt", True, False), ("$gte", True, False),
+    ("$lt", False, True), ("$lte", False, True),
+])
+def test_mixed_numeric_ranges_preserve_integer_precision(test_db, op, above, below):
+    for operand, value, expected in (
+        (float(2**53), 2**53 + 1, above),
+        (2**53 + 1, float(2**53), below),
+    ):
+        query, document = {"x": {op: operand}}, {"x": value}
+        # Each query needs its own fixture collection contents.
+        test_db.delete_many({})
+        assert bool(get_mongo_results(test_db, query, [document])) is expected
+        assert Query(query).test(document) is expected
+
 
 @pytest.mark.parametrize(
     "doc, query, expected",

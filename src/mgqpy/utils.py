@@ -2,8 +2,35 @@
 
 import datetime
 import decimal
+from functools import lru_cache
+import math
+from numbers import Number
 import uuid
 from typing import Any, Sequence
+
+
+@lru_cache(maxsize=128)
+def is_array_index(key: str) -> bool:
+    """Only canonical, nonnegative ASCII integers are array indices."""
+    return key == "0" or (key.isascii() and key.isdecimal() and key[0] != "0")
+
+
+def is_finite_number(value) -> bool:
+    return (
+        isinstance(value, Number)
+        and not isinstance(value, (bool, complex))
+        and (isinstance(value, int) or math.isfinite(value))
+    )
+
+
+def in_same_type_bracket(a, b) -> bool:
+    """Skip incompatible scalar types, without suppressing comparison errors."""
+    return a is not None and b is not None and (
+        isinstance(a, type(b))
+        or isinstance(b, type(a))
+        or (isinstance(a, Number) and isinstance(b, Number))
+        or (isinstance(a, (bytes, bytearray)) and isinstance(b, (bytes, bytearray)))
+    )
 
 
 def coerce(a: Any, b: Any) -> tuple[Any, Any]:

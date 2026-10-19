@@ -1,12 +1,10 @@
 from typing import List
 
 import mgqpy
+from mgqpy.utils import is_array_index
 
 
 def _match_all(doc, path: List[str], ov) -> bool:
-    if not _validate_all(ov):
-        return False
-
     if len(ov) == 0:
         return False
 
@@ -18,7 +16,10 @@ def _match_all(doc, path: List[str], ov) -> bool:
         if not isinstance(doc, list):
             return False
 
-        return all([o in doc or o == doc for o in ov])
+        for o in ov:
+            if not (o in doc or o == doc):
+                return False
+        return True
 
     key = path[0]
     rest = path[1:]
@@ -26,13 +27,15 @@ def _match_all(doc, path: List[str], ov) -> bool:
     if isinstance(doc, dict) and key in doc:
         return _match_all(doc[key], rest, ov)
 
-    if isinstance(doc, list) and key.isdigit():
+    if isinstance(doc, list) and is_array_index(key):
         idx = int(key)
         if idx < len(doc):
             return _match_all(doc[idx], rest, ov)
 
     if isinstance(doc, list):
-        return any([_match_all(d, path, ov) for d in doc])
+        for d in doc:
+            if _match_all(d, path, ov):
+                return True
 
     return False
 
