@@ -13,7 +13,7 @@
   exact types no longer go through native conversion.
 - `Query()` construction caches compiled field paths, precomputes regex flags,
   shares scalar-only lists and skips their per-operand preparation.
-- Results match 1.0.1; see the [measurements](benchmarks/README.md#102-versus-101).
+- Measured against 1.0.1 and 0.9.0 in [1.0.2 versus 1.0.1](benchmarks/README.md#102-versus-101).
 
 ## 1.0.1
 

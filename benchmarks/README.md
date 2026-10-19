@@ -104,6 +104,167 @@ run too; disclose which cases were rechecked instead of selecting favorable runs
 These are warmed CPU-only shared-machine observations, not CI thresholds,
 latency guarantees, memory measurements or application-distribution benchmarks.
 
+## 1.0.2 versus 1.0.1
+
+Results are in [`1.0.2/`](1.0.2/): one JSON/CSV pair per supported Python from a
+single three-ref run, plus focused rechecks (`recheck-python-*.json`). The refs are
+**0.9.0** ([source](https://github.com/weiliddat/mgqpy/commit/f22a920babc0a37dd07fbe4dae94632f81d9b79d)),
+**1.0.1** ([source](https://github.com/weiliddat/mgqpy/commit/8addeeec3c6aed6d534b1b2b46ecd61e3d29fd87))
+and the **1.0.2 candidate**
+([source](https://github.com/weiliddat/mgqpy/commit/73dde3176648a2520414c3b61f45b006b86f60c8),
+the rebased #21 runtime; later commits change documentation and results only).
+The [0.9.0/1.0.1 baseline](#090-versus-101-baseline) below is unchanged and was
+measured on different interpreter patch releases; do not divide across the two.
+
+```sh
+for py in 3.10 3.11 3.12 3.13; do
+  uv run --no-project --python "$py" python benchmarks/run.py \
+    0.9.0=f22a920babc0a37dd07fbe4dae94632f81d9b79d \
+    1.0.1=8addeeec3c6aed6d534b1b2b46ecd61e3d29fd87 \
+    1.0.2=73dde3176648a2520414c3b61f45b006b86f60c8 \
+    --cpu 0 --output "benchmarks/1.0.2/python-$py.json"
+done
+```
+
+Measured 2026-10-19 with [runner 80321d5](https://github.com/weiliddat/mgqpy/commit/80321d559cf502c79d0d6d7cefe6dff8153792e4)
+in a shared Linux x86-64 Amp orb, Intel Xeon @ 2.60 GHz, 8 logical CPUs,
+CPython 3.10.20/3.11.6/3.12.13/3.13.13. Interpreters ran serially, pinned to
+logical CPU 0, with the defaults (two processes × 12 blocks, all operations).
+The CSV ratio column compares each ref with the first (0.9.0). The **1.0.2 / 1.0.1**
+ratios below pair the same blocks from the JSON's raw samples, using the README's
+median of all 24 per-block ratios:
+
+```python
+import json, statistics
+data = json.load(open("benchmarks/1.0.2/python-3.11.json"))
+for i, row in enumerate(data["results"]):
+    for op in row["timings"]:
+        old = [v for run in data["runs"] for v in run["rows"][i]["timings"][op]["samples_us"].get("1", [])]
+        new = [v for run in data["runs"] for v in run["rows"][i]["timings"][op]["samples_us"].get("2", [])]
+        if old and row["status"]["1"]["eligible"] and row["status"]["2"]["eligible"]:
+            print(row["name"], op, statistics.median(b / a for a, b in zip(old, new)))
+```
+
+The candidate run exits nonzero: it returns the wrong answer for both
+`review-subclass-key-*` controls. 1.0.1 compares keys with `!=`, which this `str`
+subclass inherits from `str`, so `{FoldKey("A"): 1}` does not equal `{"a": 1}`.
+The candidate's flat-dict path uses Python dict lookup and the subclass's
+case-folding `==`, as 0.9.0 did. These two cases have no
+1.0.2 ratio. All other 308 cases return their expected boolean in 1.0.1 and 1.0.2.
+
+### Regressions
+
+Every case slower than 1.0.1 beyond that interpreter's identical-source control
+range is listed here. They come from two #21 mechanisms, not noise.
+
+**Wide containers rejected early.** Flat-container equality certifies every
+member's type before comparing, so it reads the whole document value even when
+lengths differ or the first member differs. 1.0.1 rejects these after a length
+check or the first member. Matching, 1.0.2 / 1.0.1:
+
+| Case | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | 3.11 µs, 1.0.1 → 1.0.2 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `review-wide-dict-empty-100` | 2.890× | 4.282× | 4.199× | 3.816× | 0.578 → 2.466 |
+| `review-wide-dict-empty-1000` | 18.826× | 30.699× | 28.973× | 26.952× | 0.599 → 18.346 |
+| `review-wide-dict-empty-10000` | 145.858× | 204.471× | 199.340× | 191.500× | 0.929 → 177.914 |
+| `review-wide-list-empty-100` | 2.166× | 2.811× | 2.451× | 2.629× | 0.937 → 2.443 |
+| `review-wide-list-empty-1000` | 10.223× | 15.413× | 14.030× | 12.070× | 1.064 → 16.238 |
+| `review-wide-list-empty-10000` | 82.913× | 135.894× | 114.859× | 108.180× | 1.128 → 153.810 |
+| `review-wide-dict-first-mismatch-100` | 1.808× | 2.368× | 2.303× | 2.160× | 1.080 → 2.529 |
+| `review-wide-dict-first-mismatch-1000` | 11.464× | 17.158× | 15.239× | 14.417× | 1.088 → 19.254 |
+| `review-wide-dict-first-mismatch-10000` | 87.358× | 124.119× | 114.821× | 106.894× | 1.431 → 176.690 |
+| `review-wide-list-first-mismatch-100` | 1.555× | 2.238× | 1.955× | 1.867× | 1.112 → 2.531 |
+| `review-wide-list-first-mismatch-1000` | 7.105× | 11.344× | 9.618× | 8.589× | 1.520 → 16.585 |
+| `review-wide-list-first-mismatch-10000` | 60.922× | 100.004× | 78.697× | 77.954× | 1.551 → 153.926 |
+
+Single use inherits the matching cost where construction does not offset it:
+`review-wide-dict-empty-*` is 1.335–1.504× / 4.212–5.994× / 29.842–45.189× at
+100 / 1,000 / 10,000 members, and `review-wide-list-empty-*` 1.015–1.165× /
+2.353–3.012× / 12.806–20.449×. `review-wide-dict-first-mismatch-1000` and
+`-10000` single use are 0.931–1.056× and 0.941–1.066×; the 3.11/3.12 values are
+just beyond their single-use controls, and the 1,000-member case rechecked at
+1.031–1.066× on 3.11–3.13. Wide-list first-mismatch single use is
+faster (0.394–0.722×) because construction skips per-operand preparation.
+
+**Colliding `$in`/`$nin` construction.** An all-plain operand list becomes a
+`frozenset`. Integers `i * sys.hash_info.modulus` share one hash, so building the
+set costs quadratic equality probes. Construction, 1.0.2 / 1.0.1:
+
+| Case | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | 3.11 µs, 1.0.1 → 1.0.2 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `review-in-collisions-100` | 1.939× | 3.083× | 3.022× | 2.911× | 29.0 → 89.2 |
+| `review-in-collisions-1000` | 16.851× | 27.205× | 26.837× | 26.063× | 237 → 6,427 |
+| `review-in-collisions-3000` | 49.769× | 78.621× | 78.650× | 75.677× | 698 → 54,875 |
+
+`review-nin-collisions-*` are within about 1% of these. Single use is 1.222–2.016× /
+10.026–16.402× / 28.139–46.968× at 100 / 1,000 / 3,000 operands. Reused matching
+of the same colliding lists is still faster than 1.0.1 (0.060–0.120×).
+
+**Rechecked small differences.** Every other initial ratio above 1.03× was within
+its control range. Those cases were rechecked with 1.0.1 and the candidate only,
+six processes × 16 blocks × 10 ms (match and single use). The rechecks confirm two
+small Python 3.10 costs: `date-scan-early` 1.034× → 1.037× and
+`ordered-key-mismatch` 1.047× → 1.033× (controls 0.997× and 1.003×). The
+unconverted-type check now runs before date conversion, and swapped-key dicts are
+compared by value before key order. Python 3.13 `elem-match-value-all-99` stays at
+1.028× (control 0.980×), at the edge of the noise. The other 20 initial
+observations (13 cases), 1.030–1.089×, rechecked at 0.951–1.014×: `value-array-0`,
+`mod-scan-early`, `mod-float-early`, `gte-int-float-array-last`, `empty-all`,
+`empty-all-negated`, `all`, `all-scalar`, `empty-suffix-indexed-size-None`,
+`path-eq-0`, `scalar-array-null`, `numeric-miss`, `mixed-miss`. The rechecks also
+reproduced `review-wide-list-empty-100` (2.206–3.289× matching) and
+`review-wide-dict-first-mismatch-1000` (11.142–17.119×).
+
+### Improvements
+
+Matching, 1.0.2 / 1.0.1 per Python, and each version's paired ratio to 0.9.0 in
+this run (ranges across the four Pythons):
+
+| Matching | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | 1.0.1 / 0.9.0 | 1.0.2 / 0.9.0 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Numeric-index miss | 0.240× | 0.290× | 0.268× | 0.287× | 7.390–8.946× | 2.050–2.543× |
+| `$exists` over subdocuments, last hit | 0.237× | 0.299× | 0.276× | 0.311× | 0.655–0.822× | 0.198–0.208× |
+| Subdocument field, last hit | 0.814× | 0.834× | 0.848× | 0.837× | 0.306–0.328× | 0.257–0.277× |
+| Flat-document equality, last hit | 0.386× | 0.384× | 0.388× | 0.361× | 0.871–1.023× | 0.335–0.389× |
+| Path `$in` of two, last hit | 0.383× | 0.408× | 0.449× | 0.388× | 0.255–0.297× | 0.104–0.131× |
+| `$in`, last of 1,000 | 0.004× | 0.005× | 0.005× | 0.004× | 0.206–0.224× | 0.001× |
+| Singleton array `$all`, last hit | 0.367× | 0.365× | 0.384× | 0.334× | 11.399–15.428× | 4.181–5.237× |
+| Singleton document `$all`, last hit | 1.002× | 0.995× | 0.993× | 1.009× | 14.328–17.714× | 14.286–17.451× |
+| Ordered-document equality, last hit | 1.002× | 1.003× | 0.997× | 1.002× | 1.270–1.487× | 1.268–1.495× |
+
+Nested-document equality and singleton document `$all` are unchanged: their
+members are compared recursively, as in 1.0.1. Across the 308 comparable cases,
+the median matching ratio is 0.995–0.996×; identical-source matching controls
+ranged 0.769–1.177×.
+
+Construction, ranges across the four Pythons (median 0.773–0.810×; controls
+0.977–1.037×):
+
+| Construction | 1.0.1 (µs) | 1.0.2 (µs) | 1.0.2 / 1.0.1 |
+| --- | ---: | ---: | ---: |
+| Flat equality | 2.221–3.386 | 1.431–2.293 | 0.657–0.673× |
+| 100-clause `$and` | 224–312 | 146–204 | 0.654–0.671× |
+| 10,000-clause `$and` | 26,116–35,114 | 23,269–30,065 | 0.853–0.887× |
+| `$in` of 1,000 | 203–328 | 74–99 | 0.227–0.420× |
+| `$in` of 10,000 | 2,073–3,226 | 696–949 | 0.215–0.404× |
+| Compiled regex | 10.773–16.409 | 2.757–4.331 | 0.255–0.293× |
+| `$regex` string | 5.179–7.641 | 4.031–6.195 | 0.777–0.812× |
+
+Single use, ranges across the four Pythons (median 0.825–0.844×; controls
+0.877–1.070×):
+
+| Single use | 1.0.1 (µs) | 1.0.2 (µs) | 1.0.2 / 1.0.1 |
+| --- | ---: | ---: | ---: |
+| Flat equality | 2.706–4.172 | 1.854–3.024 | 0.689–0.732× |
+| Numeric-index miss | 18.197–30.663 | 5.948–8.757 | 0.284–0.332× |
+| `$in`, last of 1,000 | 345–554 | 75–100 | 0.135–0.252× |
+| Singleton array `$all`, last hit | 58.752–89.293 | 25.753–39.091 | 0.392–0.446× |
+| Singleton document `$all`, last hit | 109.524–157.181 | 108.658–156.015 | 0.984–1.002× |
+
+Absolute ranges and ratio ranges are calculated independently. Eligible 0.9.0
+comparisons: 252 cases on Python 3.10 and 258 on 3.11–3.13; 0.9.0 wrong answers,
+rejections and crashes remain flagged in each CSV/JSON and have no ratio.
+
 ## 0.9.0 versus 1.0.1 baseline
 
 The full baseline is in [`baseline/`](baseline/): one JSON/CSV pair per supported
