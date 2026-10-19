@@ -32,6 +32,28 @@ ROOT = HERE.parent
 OPERATIONS = ("match", "construct", "single-use")
 
 
+def hardware():
+    """Best-effort host description; unavailable fields stay null in JSON."""
+    cpu_model = memory = None
+    try:
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            key, _, value = line.partition(":")
+            if key.strip() == "model name":
+                cpu_model = value.strip() or None
+                break
+    except OSError:
+        pass
+    try:
+        pages = os.sysconf("SC_PHYS_PAGES")
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        if pages > 0 and page_size > 0:
+            memory = pages * page_size
+    except (AttributeError, OSError, ValueError):
+        pass
+    return {"cpu_model": cpu_model, "logical_cpus": os.cpu_count(),
+            "physical_memory_bytes": memory, "os": platform.platform() or None}
+
+
 @contextmanager
 def activate(package):
     """Swap this ref's imports outside timing; retain modules imported lazily."""
@@ -305,6 +327,7 @@ def main():
         del config["sources"]
     data = {"schema": 1, "started_utc": started, "python": sys.version,
             "platform": platform.platform(), "machine": platform.machine(),
+            "hardware": hardware(),
             "timer": "time.process_time", "pythonhashseed": "0", "refs": refs, "config": config,
             "harness_sha256": {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                                for p in (Path(__file__), HERE / "cases.py")},

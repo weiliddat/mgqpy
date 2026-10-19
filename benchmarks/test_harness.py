@@ -2,7 +2,9 @@
 
 import csv
 import json
+import os
 from pathlib import Path
+import platform
 import shutil
 import statistics
 import subprocess
@@ -58,6 +60,11 @@ def test_cli_isolates_refs_flags_phases_and_pools_paired_samples(repository):
                     "--cases", "flat", "--blocks", "2", "--seconds", ".0001",
                     "--warmups", "1", "--output", str(output)], cwd=root, check=True)
     data = json.loads(output.read_text())
+    hardware = data["hardware"]
+    assert hardware["logical_cpus"] == os.cpu_count()
+    assert hardware["os"] == (platform.platform() or None)
+    assert hardware["cpu_model"] is None or isinstance(hardware["cpu_model"], str)
+    assert hardware["physical_memory_bytes"] is None or hardware["physical_memory_bytes"] > 0
     row = data["results"][0]
     assert data["refs"]["0"]["commit"] == refs[0]
     assert row["difference"]

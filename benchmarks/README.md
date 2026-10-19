@@ -29,10 +29,16 @@ python benchmarks/run.py old=origin/main previous=HEAD~1 candidate=HEAD \
 Each timed run writes **JSON with raw paired samples and CSV with per-case
 medians/ratios**, beside one another. Ref names resolve to full commit IDs before
 extraction. JSON records Python, platform, affinity, settings and SHA-256 hashes
-of the runner and cases. The temporary source trees are removed afterward.
+of the runner and cases, plus best-effort CPU model, logical CPU count, physical
+memory in bytes and OS (`null` when unavailable). Temporary source trees are
+removed afterward.
 Avoid other CPU-heavy work while running; run interpreters serially. On Linux
 the workers pin to the first available logical CPU, or the supplied `--cpu`.
 Elsewhere affinity is unavailable and recorded as `null`.
+
+Comparisons are valid only between versions measured together in the same run on
+the same hardware. When hardware changes, rerun all versions together on that
+machine rather than comparing against saved numbers from another machine.
 
 The default operations are measured independently:
 
