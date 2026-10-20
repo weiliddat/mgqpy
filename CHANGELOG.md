@@ -18,8 +18,8 @@
 - Results match 1.0.1. A few small cases remain slower, mainly dict equality
   where the keys are in a different order or are `str` subclasses, or where a dict
   of up to 16 members differs at its first value: up to about 1.4× and 0.4 µs per
-  call when matching, 1.1× and 0.4 µs when constructing, and 1.1× and 0.85 µs for
-  single use; see [1.0.2 versus 1.0.1](benchmarks/README.md#102-versus-101).
+  call when matching, 1.1× and 0.4 µs when constructing, and 1.1× and 0.8 µs for
+  single use; see the [current benchmark snapshot](benchmarks/README.md#current-snapshot).
 
 ## 1.0.1
 
