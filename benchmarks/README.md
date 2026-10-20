@@ -111,12 +111,17 @@ Results are in [`1.0.2/`](1.0.2/), one JSON/CSV pair per supported Python for ea
 - `python-*.json`: **0.9.0** ([source](https://github.com/weiliddat/mgqpy/commit/f22a920babc0a37dd07fbe4dae94632f81d9b79d)),
   **1.0.1** ([source](https://github.com/weiliddat/mgqpy/commit/8addeeec3c6aed6d534b1b2b46ecd61e3d29fd87)) and the
   **1.0.2 candidate** ([source](https://github.com/weiliddat/mgqpy/commit/a7f0c83140129c7e9c9bf1c8da4ca61747d986a8)) in one
-  default run per interpreter. Later commits change documentation and results only.
+  default run per interpreter. Two later commits change runtime code (see
+  [After the independent review](#after-the-independent-review)); `focused-python-*.json`
+  measures them.
 - `recheck-python-*.json`: focused rechecks of the 20 case patterns in their
   `config.cases`, chosen from the cases initially above 1.03×.
 - `recheck-2-python-*.json`: the same recheck, added later, of the five cases the
   first one missed: `all-singleton-regex-99`, `empty-suffix-indexed-size-None`,
   `array-range-element-miss`, `elem-document-last` and `gt-int-float-array-last`.
+- `focused-python-*.json`: 1.0.1, the 1.0.2 candidate above (`before`) and
+  [49783b0](https://github.com/weiliddat/mgqpy/commit/49783b0) on every case the two later
+  runtime commits can affect; `focused-recheck-python-3.13.json` rechecks two of them.
 - `per-fix/`: 1.0.1, the pre-fix candidate and each review-fix commit on the target
   cases, to attribute changes to individual commits.
 - `before-fixes/`: the first snapshot, of [73dde31](https://github.com/weiliddat/mgqpy/commit/73dde3176648a2520414c3b61f45b006b86f60c8),
@@ -174,6 +179,8 @@ was fixed in its own commit:
    because `equal()` compares keys with their own `!=`.
 3. [2edd026](https://github.com/weiliddat/mgqpy/commit/2edd026): `$in`/`$nin` lists with an int or float of magnitude
    `sys.hash_info.modulus` or more keep the pairwise scan instead of a hash set.
+   In lists that also held `str` or `None`, this commit checked only ints;
+   [c3a2eb4](https://github.com/weiliddat/mgqpy/commit/c3a2eb4) applies it to floats too.
 4. [d3f7c0e](https://github.com/weiliddat/mgqpy/commit/d3f7c0e): compiled paths are cached for exact `str` only.
 5. [a7f0c83](https://github.com/weiliddat/mgqpy/commit/a7f0c83): compiled-regex flag masks keep `RegexFlag` inversion, so
    undefined flags behave per interpreter as in 1.0.1.
@@ -216,9 +223,10 @@ the collision costs. Fixes 4 and 5 change no measured case beyond noise.
 ### Remaining cases slower than 1.0.1
 
 Every case initially above 1.03× in the default run was rechecked: 20 case patterns
-in `recheck-python-*`, and the five that run missed in `recheck-2-python-*`. These
-remain slower in the recheck,
-whose controls were 0.986–1.014×:
+in `recheck-python-*`, and the five that run missed in `recheck-2-python-*`. One
+case beyond its control range but below 1.03×, `review-in-2-1` construction on
+3.12 (1.025×), was measured again in the focused check (1.003–1.004×). These remain
+slower in the recheck, whose controls were 0.986–1.014×:
 
 | Case | Operation | Recheck 1.0.2 / 1.0.1 | Extra time per call | Cause |
 | --- | --- | ---: | ---: | --- |
@@ -233,7 +241,13 @@ whose controls were 0.986–1.014×:
 | `all-singleton-document-0`, `value-native-document-0`, `document-scan-early` | single use (3.10 only) | 1.023–1.039× | 0.20–0.48 µs | construction cost above |
 
 Per call, that is up to 0.39 µs when matching, 0.40 µs when constructing and
-0.75 µs for single use (construction plus one match), largest on 3.10.
+0.75 µs for single use (construction plus one match), largest on 3.10. The
+[focused check](#after-the-independent-review) measured the same cases at the head at
+up to 0.42 µs when matching and 0.84 µs for single use (`review-subclass-key-ne` on
+3.10), and adds a known bounded tradeoff of the same kind,
+`review-flat-dict-16-first-mismatch`. At the current head,
+`all-singleton-document-0` and `value-native-document-0` single use on 3.10 read
+1.005–1.009×; `document-scan-early` still reads 1.031×.
 
 Initially flagged and cleared on recheck:
 `review-wide-list-first-mismatch-1000`/`-10000` (0.999–1.010×), `value-array-0`,
@@ -241,9 +255,61 @@ Initially flagged and cleared on recheck:
 `all-singleton`, `lt-*-array-miss`, `path-eq-0` and `construct-and-100`, and in
 `recheck-2-python-*`, `all-singleton-regex-99`, `empty-suffix-indexed-size-None`,
 `array-range-element-miss`, `elem-document-last` and `gt-int-float-array-last`
-(0.972–1.019×; controls 0.968–1.029×). The wide-list
+(0.972–1.019×; controls 0.968–1.029×; `empty-suffix-indexed-size-None` read 1.019× on
+3.13 and 1.004× in `focused-recheck-python-3.13.json`). The wide-list
 cases read 1.185–1.279× in the default run, against controls as low as 0.846×; their
 fast-version blocks are short.
+
+### After the independent review
+
+Two later commits change runtime code, and one adds a case:
+
+- [c3a2eb4](https://github.com/weiliddat/mgqpy/commit/c3a2eb4): any `int` or `float` operand at or above
+  `sys.hash_info.modulus` in magnitude sends the whole `$in`/`$nin` list to the
+  pairwise scan, whatever the other operand types. Before, `[1e100]` scanned but
+  `[1e100, None]` was hashed. Results are unchanged.
+- [b8b71b5](https://github.com/weiliddat/mgqpy/commit/b8b71b5): flat-container preparation checks the 16-member limit
+  before certifying dict keys, so large dict operands never scan their keys.
+- `review-flat-dict-16-first-mismatch`: a 16-member dict operand whose document value
+  has the same keys in the same order but a wrong first value.
+
+`focused-python-*.json` compares 1.0.1, `before` (a7f0c83) and the head (49783b0) on the 65 cases
+these changes can reach: every `$in`/`$nin` case and every case with an equality
+operand. It used six processes × 16 blocks × 10 ms per Python, with the four Pythons
+running at once on logical CPUs 0, 2, 4 and 6 (separate physical cores). Controls:
+matching 0.917–1.070×, construction 0.991–1.014×, single use 0.984–1.011×. Every case
+returned its expected boolean.
+
+| Cases | Operation | Head / before | Head / 1.0.1 |
+| --- | --- | ---: | ---: |
+| `review-wide-dict-first-mismatch-*` | construct, single use | 0.860–0.922× | 0.683–0.751× |
+| nested-document operands (`value-document-*`, `value-native-document-*`, `ordered-document`, `all-singleton-document-*`) | construct | 0.945–0.978× | 0.842–0.977× |
+| every `$in`/`$nin` case | construct, single use | 0.990–1.011× | 0.159–1.018× |
+| list operands | all | 0.990–1.015× | 0.114–1.011× |
+| other equality cases | all | 0.986–1.010× | 0.569–1.307× |
+
+Large dict operands no longer scan their keys, and nested-document operands now stop at
+their first non-plain value before the key scan. The harness has no mixed `$in` list
+with a large number, so c3a2eb4 changes no measured path; int-only lists run the same
+code. `in-1000-last` matching read 1.071× head/before on 3.13; a serial recheck read
+1.072× with its identical-source control at 0.953× (0.48–0.52 µs per call), and its
+matching code is unchanged. Other head/before readings exceed their operation's control
+range by at most 0.004 (1.008–1.015×).
+
+**Known bounded tradeoff.** A flat dict of up to 16 plain members is certified and then
+compared in C. When the document value's first member already differs, `equal()` would
+stop there, so certifying every member costs more:
+
+| `review-flat-dict-16-first-mismatch` | 1.0.2 / 1.0.1 | Extra time per call |
+| --- | ---: | ---: |
+| match | 1.214–1.381× | 0.29–0.40 µs |
+| construct | 1.036–1.075× | 0.26–0.38 µs |
+| single use | 1.052–1.104× | 0.49–0.75 µs |
+
+In an uncommitted 3.11 comparison with scratch cases, the same shortcut made a full
+hit or late miss of 16 members 0.38–0.68× of 1.0.1, and lowering the cutoff to 8
+traded those gains for the cost above. Sizes above 16 use `equal()`. The cutoff and
+the design are deliberate.
 
 ### Improvements
 

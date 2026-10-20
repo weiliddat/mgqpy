@@ -1,0 +1,7 @@
+case,operation,variant,median_us,ratio_to_first,identical_source_ratio,eligible,status
+empty-suffix-indexed-size-None,match,1.0.1,6.8498191074400285,,1.0021399029706834,True,"{""eligible"": true, ""outcome"": {""phase"": ""match"", ""type"": ""bool"", ""value"": ""False""}, ""validation"": ""ok""}"
+empty-suffix-indexed-size-None,match,before,6.809826729106665,0.9968369208543406,1.0021399029706834,True,"{""eligible"": true, ""outcome"": {""phase"": ""match"", ""type"": ""bool"", ""value"": ""False""}, ""validation"": ""ok""}"
+empty-suffix-indexed-size-None,match,1.0.2,6.850671515804612,1.003633309203889,1.0021399029706834,True,"{""eligible"": true, ""outcome"": {""phase"": ""match"", ""type"": ""bool"", ""value"": ""False""}, ""validation"": ""ok""}"
+in-1000-last,match,1.0.1,141.87025234741714,,0.9533278158368967,True,"{""eligible"": true, ""outcome"": {""phase"": ""match"", ""type"": ""bool"", ""value"": ""True""}, ""validation"": ""ok""}"
+in-1000-last,match,before,0.48196105664422495,0.003359676838862458,0.9533278158368967,True,"{""eligible"": true, ""outcome"": {""phase"": ""match"", ""type"": ""bool"", ""value"": ""True""}, ""validation"": ""ok""}"
+in-1000-last,match,1.0.2,0.5197129629615678,0.0035849481057233534,0.9533278158368967,True,"{""eligible"": true, ""outcome"": {""phase"": ""match"", ""type"": ""bool"", ""value"": ""True""}, ""validation"": ""ok""}"
