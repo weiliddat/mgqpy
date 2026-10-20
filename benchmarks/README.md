@@ -120,7 +120,7 @@ for py in 3.10 3.11 3.12 3.13; do
     0.9.0=f22a920babc0a37dd07fbe4dae94632f81d9b79d \
     1.0.1=8addeeec3c6aed6d534b1b2b46ecd61e3d29fd87 \
     1.0.2=4615072fb940c19cda4313f08e9a12126eee0976 \
-    --cpu 0 --output "/tmp/snapshot/python-$py.json"
+    --output "/tmp/snapshot/python-$py.json"
 done
 ```
 
@@ -145,7 +145,7 @@ json.dump(d, open(sys.argv[2], "w"), separators=(",", ":"))
 
 Measured 2026-10-20 with the runner from the 1.0.2 source, in a shared Linux x86-64
 Amp orb (Intel Xeon @ 2.60 GHz, 8 logical CPUs). Interpreters ran serially, pinned to
-logical CPU 0, with the defaults: two processes × 12 blocks, all operations. Every case
+logical CPU 0 with `--cpu 0` (Linux only), with the defaults: two processes × 12 blocks, all operations. Every case
 returned its expected boolean in 1.0.1 and 1.0.2, and all four runs exit 0.
 
 | CPython | Eligible against 0.9.0, of 311 | Identical-source matching | Construction | Single use |
