@@ -11,6 +11,7 @@ import pytest
 
 from mgqpy import Query
 import mgqpy.comparison as comparison
+from mgqpy.operators.in_nin import prepare_in
 
 
 # Subclasses retain their values but bypass exact-type comparison/membership paths.
@@ -93,3 +94,17 @@ def test_membership_with_colliding_int_hashes_builds_in_linear_time(op):
     assert query.test({"x": values[-1]}) is (op == "$in")
     assert query.test({"x": values[-1] + 1}) is (op == "$nin")
     assert query.test({}) is (op == "$in")
+
+
+@pytest.mark.parametrize("operands", [[1e100, None], [1e100, "a"], [None, -1e100],
+                                      [sys.hash_info.modulus, "a"], ["a", 2.0 ** 61]])
+def test_membership_leaves_large_numbers_in_mixed_lists_unhashed(operands):
+    # One rule for every list: a number at or above the hash modulus in
+    # magnitude keeps the whole list on the pairwise scan.
+    assert prepare_in(operands)[0] is None
+    number = next(value for value in operands if isinstance(value, (int, float)))
+    query = Query({"x": {"$in": operands}})
+    assert query.test({"x": number}) and query.test({"x": int(number)})
+    assert not query.test({"x": int(number) + 1})
+    assert query.test({"x": "a"}) is ("a" in operands)
+    assert query.test({}) is (None in operands)
