@@ -1,0 +1,9 @@
+{
+  "name": "offline-matcher-compare-js",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "mingo": "7.2.5",
+    "sift": "17.1.4"
+  }
+}

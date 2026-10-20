@@ -15,8 +15,8 @@ Python-native conversions and other known differences are documented below.
 pip install mgqpy
 ```
 
-Upgrading from 0.9.0? Read the [migration notes](MIGRATING.md) and
-[1.0.0 changelog](CHANGELOG.md#100).
+Upgrading from 0.9.0? Read the [migration notes](https://github.com/weiliddat/mgqpy/blob/main/MIGRATING.md) and
+[1.0.0 changelog](https://github.com/weiliddat/mgqpy/blob/main/CHANGELOG.md#100).
 
 ## Usage
 
@@ -330,6 +330,35 @@ Array query operators
 - [x] \$elemMatch
 - [x] \$size
 
+## Compared with other libraries
+
+Measured 2026-10-20 against other offline MongoDB filter matchers (mongomock,
+mongoquery, montydb, tinymongo, mongita; sift and mingo in a JavaScript appendix),
+with MongoDB 7.0 and 8.0 as ground truth. CPython 3.11 timings; 3.13 was checked.
+Details, method and caveats are in the
+[comparison](https://github.com/weiliddat/mgqpy/blob/main/benchmarks/compare/results/RESULTS.md).
+
+| | mgqpy | Others |
+| --- | ---: | --- |
+| New queries agreeing with MongoDB | 682/746 | tinymongo 720, montydb 587, mongomock 412 |
+| MongoDB manual examples agreeing | 66/74 | tinymongo 73, montydb 68, mongomock 59 |
+| Matching time, median vs mgqpy | 1× | mongita 2.0× (few operators), mongomock 7.0×, tinymongo 14.8× |
+| Construct + match once, median vs mgqpy | 1× | mongita 0.30×, mongoquery 0.76×, mongomock 0.94× (1.06× on 3.13) |
+
+- tinymongo matches MongoDB more often on both independent query sets. Most of
+  mgqpy's misses are `$type`, which it does not support; `$comment` is also
+  rejected, and `\w`-style regex classes match Unicode letters, unlike MongoDB.
+- Single use (construct and match once) depends on the workload: mgqpy compiles
+  the whole query up front, and mongoquery and mongita are faster than mgqpy in
+  most single-use cases; mongomock's median is 0.94× mgqpy on 3.11 and 1.06× on
+  3.13. Reuse `Query` objects for repeated matching.
+- This is a survey of one corpus and one set of workloads, mostly mgqpy's own
+  development fixtures plus independent MongoDB manual examples, not a general
+  ranking. Measured on the 1.0.2 runtime, which 1.0.3 does not change.
+- On the full corpus mgqpy agrees on 5,532 of 5,596 queries, but most of those
+  queries come from the test set it was developed against, so that number is not
+  an independent measure.
+
 ## Development
 
 Install development dependencies with `uv sync --locked --dev`. Tests compare
@@ -343,7 +372,7 @@ and close the client. CI tests Python 3.10–3.13 against MongoDB 7 and 8, inclu
 an isolated installed-wheel smoke test.
 
 Correctness tests do not run performance benchmarks. Use `python benchmarks/run.py`
-to compare git refs; see [the benchmarks](benchmarks/README.md) for commands, cases,
+to compare git refs; see [the benchmarks](https://github.com/weiliddat/mgqpy/blob/main/benchmarks/README.md) for commands, cases,
 construction/matching/single-use results and historical measurements.
 
 Amp orbs use `.agents/setup` to install the locked Python dependencies and a
