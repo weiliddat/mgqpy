@@ -112,7 +112,11 @@ Results are in [`1.0.2/`](1.0.2/), one JSON/CSV pair per supported Python for ea
   **1.0.1** ([source](https://github.com/weiliddat/mgqpy/commit/8addeeec3c6aed6d534b1b2b46ecd61e3d29fd87)) and the
   **1.0.2 candidate** ([source](https://github.com/weiliddat/mgqpy/commit/a7f0c83140129c7e9c9bf1c8da4ca61747d986a8)) in one
   default run per interpreter. Later commits change documentation and results only.
-- `recheck-python-*.json`: focused rechecks of every case initially above 1.03×.
+- `recheck-python-*.json`: focused rechecks of the 20 case patterns in their
+  `config.cases`, chosen from the cases initially above 1.03×.
+- `recheck-2-python-*.json`: the same recheck, added later, of the five cases the
+  first one missed: `all-singleton-regex-99`, `empty-suffix-indexed-size-None`,
+  `array-range-element-miss`, `elem-document-last` and `gt-int-float-array-last`.
 - `per-fix/`: 1.0.1, the pre-fix candidate and each review-fix commit on the target
   cases, to attribute changes to individual commits.
 - `before-fixes/`: the first snapshot, of [73dde31](https://github.com/weiliddat/mgqpy/commit/73dde3176648a2520414c3b61f45b006b86f60c8),
@@ -211,8 +215,9 @@ the collision costs. Fixes 4 and 5 change no measured case beyond noise.
 
 ### Remaining cases slower than 1.0.1
 
-Every case beyond its interpreter's identical-source control range in the default
-run, or initially above 1.03×, was rechecked. These remain slower in the recheck,
+Every case initially above 1.03× in the default run was rechecked: 20 case patterns
+in `recheck-python-*`, and the five that run missed in `recheck-2-python-*`. These
+remain slower in the recheck,
 whose controls were 0.986–1.014×:
 
 | Case | Operation | Recheck 1.0.2 / 1.0.1 | Cause |
@@ -230,7 +235,10 @@ whose controls were 0.986–1.014×:
 These are absolute costs of 0.1–0.4 µs. Initially flagged and cleared on recheck:
 `review-wide-list-first-mismatch-1000`/`-10000` (0.999–1.010×), `value-array-0`,
 `elem-match-value-all-99`, `mod-scan-early`, `mod-float-early`, `all`,
-`all-singleton`, `lt-*-array-miss`, `path-eq-0` and `construct-and-100`. The wide-list
+`all-singleton`, `lt-*-array-miss`, `path-eq-0` and `construct-and-100`, and in
+`recheck-2-python-*`, `all-singleton-regex-99`, `empty-suffix-indexed-size-None`,
+`array-range-element-miss`, `elem-document-last` and `gt-int-float-array-last`
+(0.972–1.019×; controls 0.968–1.029×). The wide-list
 cases read 1.185–1.279× in the default run, against controls as low as 0.846×; their
 fast-version blocks are short.
 
