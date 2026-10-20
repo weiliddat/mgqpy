@@ -478,8 +478,8 @@ nearby-ref comparisons and focused rechecks, not division by these saved medians
 
 ## Case inventory and the claims it supports
 
-There are **310 cases**, with all three operations available for every eligible
-case: 202 original matching fixtures + 56 whole-stack additions + 52 controls.
+There are **311 cases**, with all three operations available for every eligible
+case: 202 original matching fixtures + 56 whole-stack additions + 53 controls.
 The original 27 construction fixtures are a subset of the 202; none were lost.
 Names and expected results are listed by `--list`; the executable query/document
 definitions live in one file rather than a second inventory of copied inputs.
