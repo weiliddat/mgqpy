@@ -210,8 +210,9 @@ def _prepare_expression(value, location):
         operands = value[op]
         if not isinstance(operands, list):
             raise TypeError(f"{op} operator value must be a list")
-        # Scalar-only lists, the common case, have nothing to prepare or reject.
-        if not _SCALARS.issuperset(map(type, operands)):
+        # Exact scalar-only lists, the common case, have nothing to prepare or reject.
+        # The copy turns a list subclass into the plain list of its stored items.
+        if type(operands) is not list or not _SCALARS.issuperset(map(type, operands)):
             operands = value[op] = operands.copy()
             for i, operand in enumerate(operands):
                 if _is_expression(operand):

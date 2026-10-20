@@ -96,6 +96,23 @@ def test_membership_with_colliding_int_hashes_builds_in_linear_time(op):
     assert query.test({}) is (op == "$in")
 
 
+class ShiftedIterList(list):
+    """Iterates as each stored item + 1."""
+
+    def __iter__(self):
+        return (item + 1 for item in list.__iter__(self))
+
+
+def test_list_operand_subclasses_are_iterated_once_into_a_plain_list():
+    # The query snapshot iterates the operands once; matching uses that plain list.
+    assert Query({"x": {"$in": ShiftedIterList([1])}}).test({"x": 2})
+    assert not Query({"x": {"$in": ShiftedIterList([1])}}).test({"x": 3})
+    assert not Query({"x": {"$nin": ShiftedIterList([1])}}).test({"x": 2})
+    assert Query({"x": {"$nin": ShiftedIterList([1])}}).test({"x": 3})
+    assert Query({"x": {"$all": ShiftedIterList([1, 2])}}).test({"x": [2, 3]})
+    assert not Query({"x": {"$all": ShiftedIterList([1, 2])}}).test({"x": [3, 4]})
+
+
 @pytest.mark.parametrize("operands", [[1e100, None], [1e100, "a"], [None, -1e100],
                                       [sys.hash_info.modulus, "a"], ["a", 2.0 ** 61]])
 def test_membership_leaves_large_numbers_in_mixed_lists_unhashed(operands):
