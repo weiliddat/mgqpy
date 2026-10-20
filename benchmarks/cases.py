@@ -350,6 +350,12 @@ for op, hit in (("$gt", 73), ("$gte", 72), ("$lt", 71), ("$lte", 72)):
 MATCH_CASES.append(("deep-mixed-range", {"a.b.c.d.x": {"$gt": 72}},
                     {"a": {"b": {"c": {"d": {"x": 73.0}}}}}, True))
 
+# Largest flat dict on the C equality path, rejected at its first value: the
+# certification scan costs more than equal()'s early exit.
+FLAT_DICT = {f"k{i}": i for i in range(16)}
+MATCH_CASES.append(("review-flat-dict-16-first-mismatch", {"x": FLAT_DICT},
+                    {"x": {**FLAT_DICT, "k0": -1}}, False))
+
 assert len({row[0] for row in MATCH_CASES}) == len(MATCH_CASES)
 
 
