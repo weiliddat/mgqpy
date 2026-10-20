@@ -5,15 +5,19 @@
 ### Performance
 
 - `$in`/`$nin` look up values by hash when every operand is an exact `None`,
-  `int`, `float` or `str`; other operand lists still compare in order.
+  `int`, `float` or `str` below `sys.hash_info.modulus` in magnitude; other
+  operand lists still compare in order.
 - Array paths test members' fields directly, and test a missing field once per
   array instead of once per member. This mostly helps numeric-index misses.
-- Equality against a flat list or dict of exact `None`/`int`/`float`/`str`
-  members compares in C once the document value has the same shape; mismatched
-  exact types no longer go through native conversion.
-- `Query()` construction caches compiled field paths, precomputes regex flags,
+- Equality against a flat list or dict of at most 16 exact `None`/`int`/`float`/`str`
+  members (and exact `str` keys) compares in C once the document value has the
+  same length and shape; mismatched exact types no longer go through native
+  conversion.
+- `Query()` construction caches compiled exact-`str` field paths, precomputes regex flags,
   shares scalar-only lists and skips their per-operand preparation.
-- Measured against 1.0.1 and 0.9.0 in [1.0.2 versus 1.0.1](benchmarks/README.md#102-versus-101).
+- Results match 1.0.1. A few small cases remain up to about 1.3× (0.1–0.4 µs)
+  slower, mainly dict equality with keys in a different order; see
+  [1.0.2 versus 1.0.1](benchmarks/README.md#102-versus-101).
 
 ## 1.0.1
 

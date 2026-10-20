@@ -106,13 +106,19 @@ latency guarantees, memory measurements or application-distribution benchmarks.
 
 ## 1.0.2 versus 1.0.1
 
-Results are in [`1.0.2/`](1.0.2/): one JSON/CSV pair per supported Python from a
-single three-ref run, plus focused rechecks (`recheck-python-*.json`). The refs are
-**0.9.0** ([source](https://github.com/weiliddat/mgqpy/commit/f22a920babc0a37dd07fbe4dae94632f81d9b79d)),
-**1.0.1** ([source](https://github.com/weiliddat/mgqpy/commit/8addeeec3c6aed6d534b1b2b46ecd61e3d29fd87))
-and the **1.0.2 candidate**
-([source](https://github.com/weiliddat/mgqpy/commit/73dde3176648a2520414c3b61f45b006b86f60c8),
-the rebased #21 runtime; later commits change documentation and results only).
+Results are in [`1.0.2/`](1.0.2/), one JSON/CSV pair per supported Python for each run:
+
+- `python-*.json`: **0.9.0** ([source](https://github.com/weiliddat/mgqpy/commit/f22a920babc0a37dd07fbe4dae94632f81d9b79d)),
+  **1.0.1** ([source](https://github.com/weiliddat/mgqpy/commit/8addeeec3c6aed6d534b1b2b46ecd61e3d29fd87)) and the
+  **1.0.2 candidate** ([source](https://github.com/weiliddat/mgqpy/commit/a7f0c83140129c7e9c9bf1c8da4ca61747d986a8)) in one
+  default run per interpreter. Later commits change documentation and results only.
+- `recheck-python-*.json`: focused rechecks of every case initially above 1.03×.
+- `per-fix/`: 1.0.1, the pre-fix candidate and each review-fix commit on the target
+  cases, to attribute changes to individual commits.
+- `before-fixes/`: the first snapshot, of [73dde31](https://github.com/weiliddat/mgqpy/commit/73dde3176648a2520414c3b61f45b006b86f60c8),
+  before the review fixes. It is kept for comparison; the tables below use the
+  post-fix run unless a column says otherwise.
+
 The [0.9.0/1.0.1 baseline](#090-versus-101-baseline) below is unchanged and was
 measured on different interpreter patch releases; do not divide across the two.
 
@@ -121,15 +127,20 @@ for py in 3.10 3.11 3.12 3.13; do
   uv run --no-project --python "$py" python benchmarks/run.py \
     0.9.0=f22a920babc0a37dd07fbe4dae94632f81d9b79d \
     1.0.1=8addeeec3c6aed6d534b1b2b46ecd61e3d29fd87 \
-    1.0.2=73dde3176648a2520414c3b61f45b006b86f60c8 \
+    1.0.2=a7f0c83140129c7e9c9bf1c8da4ca61747d986a8 \
     --cpu 0 --output "benchmarks/1.0.2/python-$py.json"
 done
 ```
 
-Measured 2026-10-19 with [runner 80321d5](https://github.com/weiliddat/mgqpy/commit/80321d559cf502c79d0d6d7cefe6dff8153792e4)
+Measured 2026-10-19/20 with [runner 80321d5](https://github.com/weiliddat/mgqpy/commit/80321d559cf502c79d0d6d7cefe6dff8153792e4)
 in a shared Linux x86-64 Amp orb, Intel Xeon @ 2.60 GHz, 8 logical CPUs,
-CPython 3.10.20/3.11.6/3.12.13/3.13.13. Interpreters ran serially, pinned to
-logical CPU 0, with the defaults (two processes × 12 blocks, all operations).
+CPython 3.10.20/3.11.6/3.12.13/3.13.13: the same machine and interpreters as the
+pre-fix snapshot. Interpreters ran serially, pinned to logical CPU 0, with the
+defaults (two processes × 12 blocks, all operations). Rechecks used six processes ×
+16 blocks × 10 ms. Every case returned its expected boolean in 1.0.1 and 1.0.2; all
+four runs exit 0. Eligible 0.9.0 comparisons: 252 cases on Python 3.10 and 258 on
+3.11–3.13.
+
 The CSV ratio column compares each ref with the first (0.9.0). The **1.0.2 / 1.0.1**
 ratios below pair the same blocks from the JSON's raw samples, using the README's
 median of all 24 per-block ratios:
@@ -145,75 +156,83 @@ for i, row in enumerate(data["results"]):
             print(row["name"], op, statistics.median(b / a for a, b in zip(old, new)))
 ```
 
-The candidate run exits nonzero: it returns the wrong answer for both
-`review-subclass-key-*` controls. 1.0.1 compares keys with `!=`, which this `str`
-subclass inherits from `str`, so `{FoldKey("A"): 1}` does not equal `{"a": 1}`.
-The candidate's flat-dict path uses Python dict lookup and the subclass's
-case-folding `==`, as 0.9.0 did. These two cases have no
-1.0.2 ratio. All other 308 cases return their expected boolean in 1.0.1 and 1.0.2.
+### Review fixes and their target cases
 
-### Regressions
+The pre-fix snapshot found one result difference and two regression families. Each
+was fixed in its own commit:
 
-Every case slower than 1.0.1 beyond that interpreter's identical-source control
-range is listed here. They come from two #21 mechanisms, not noise.
+1. [1b29b57](https://github.com/weiliddat/mgqpy/commit/1b29b57): flat-container equality checks length first and applies
+   only to containers of at most 16 members; larger ones use `equal()`, which rejects
+   at the first mismatch. At 16 members, certify-then-C-equality still costs 0.2–0.4×
+   of `equal()` on a full hit; at 32 members it already costs more than `equal()`
+   needs to reject a first-member mismatch.
+2. [d7a7d09](https://github.com/weiliddat/mgqpy/commit/d7a7d09): the flat-dict path requires exact `str` keys on both sides,
+   because `equal()` compares keys with their own `!=`.
+3. [2edd026](https://github.com/weiliddat/mgqpy/commit/2edd026): `$in`/`$nin` lists with an int or float of magnitude
+   `sys.hash_info.modulus` or more keep the pairwise scan instead of a hash set.
+4. [d3f7c0e](https://github.com/weiliddat/mgqpy/commit/d3f7c0e): compiled paths are cached for exact `str` only.
+5. [a7f0c83](https://github.com/weiliddat/mgqpy/commit/a7f0c83): compiled-regex flag masks keep `RegexFlag` inversion, so
+   undefined flags behave per interpreter as in 1.0.1.
 
-**Wide containers rejected early.** Flat-container equality certifies every
-member's type before comparing, so it reads the whole document value even when
-lengths differ or the first member differs. 1.0.1 rejects these after a length
-check or the first member. Matching, 1.0.2 / 1.0.1:
+1.0.2 / 1.0.1, before and after:
 
-| Case | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | 3.11 µs, 1.0.1 → 1.0.2 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `review-wide-dict-empty-100` | 2.890× | 4.282× | 4.199× | 3.816× | 0.578 → 2.466 |
-| `review-wide-dict-empty-1000` | 18.826× | 30.699× | 28.973× | 26.952× | 0.599 → 18.346 |
-| `review-wide-dict-empty-10000` | 145.858× | 204.471× | 199.340× | 191.500× | 0.929 → 177.914 |
-| `review-wide-list-empty-100` | 2.166× | 2.811× | 2.451× | 2.629× | 0.937 → 2.443 |
-| `review-wide-list-empty-1000` | 10.223× | 15.413× | 14.030× | 12.070× | 1.064 → 16.238 |
-| `review-wide-list-empty-10000` | 82.913× | 135.894× | 114.859× | 108.180× | 1.128 → 153.810 |
-| `review-wide-dict-first-mismatch-100` | 1.808× | 2.368× | 2.303× | 2.160× | 1.080 → 2.529 |
-| `review-wide-dict-first-mismatch-1000` | 11.464× | 17.158× | 15.239× | 14.417× | 1.088 → 19.254 |
-| `review-wide-dict-first-mismatch-10000` | 87.358× | 124.119× | 114.821× | 106.894× | 1.431 → 176.690 |
-| `review-wide-list-first-mismatch-100` | 1.555× | 2.238× | 1.955× | 1.867× | 1.112 → 2.531 |
-| `review-wide-list-first-mismatch-1000` | 7.105× | 11.344× | 9.618× | 8.589× | 1.520 → 16.585 |
-| `review-wide-list-first-mismatch-10000` | 60.922× | 100.004× | 78.697× | 77.954× | 1.551 → 153.926 |
+| Case | Operation | Before fixes | After, 3.10 | 3.11 | 3.12 | 3.13 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `review-wide-dict-empty-100` | match | 2.890–4.282× | 0.790× | 0.788× | 0.807× | 0.744× |
+| `review-wide-dict-empty-1000` | match | 18.826–30.699× | 0.818× | 0.784× | 0.808× | 0.759× |
+| `review-wide-dict-empty-10000` | match | 145.858–204.471× | 0.807× | 0.783× | 0.799× | 0.762× |
+| `review-wide-list-empty-100` | match | 2.166–2.811× | 0.820× | 0.784× | 0.799× | 0.806× |
+| `review-wide-list-empty-1000` | match | 10.223–15.413× | 0.904× | 0.975× | 0.896× | 0.882× |
+| `review-wide-list-empty-10000` | match | 82.913–135.894× | 0.920× | 0.989× | 0.893× | 0.865× |
+| `review-wide-dict-first-mismatch-100` | match | 1.808–2.368× | 0.998× | 1.008× | 1.000× | 1.006× |
+| `review-wide-dict-first-mismatch-1000` | match | 11.464–17.158× | 1.006× | 0.983× | 1.001× | 1.000× |
+| `review-wide-dict-first-mismatch-10000` | match | 87.358–124.119× | 1.000× | 0.990× | 1.006× | 0.986× |
+| `review-wide-list-first-mismatch-100` | match | 1.555–2.238× | 1.002× | 0.996× | 0.997× | 0.996× |
+| `review-wide-list-first-mismatch-1000` | match | 7.105–11.344× | 1.054× | 1.139× | 1.002× | 0.999× |
+| `review-wide-list-first-mismatch-10000` | match | 60.922–100.004× | 1.216× | 1.254× | 1.185× | 1.279× |
+| `review-in-collisions-100` | construct | 1.939–3.083× | 0.380× | 0.572× | 0.534× | 0.530× |
+| `review-in-collisions-1000` | construct | 16.851–27.205× | 0.261× | 0.474× | 0.418× | 0.416× |
+| `review-in-collisions-3000` | construct | 49.769–78.650× | 0.244× | 0.462× | 0.397× | 0.405× |
+| `review-nin-collisions-100` | construct | 1.930–3.111× | 0.379× | 0.575× | 0.539× | 0.535× |
+| `review-nin-collisions-1000` | construct | 17.021–27.106× | 0.260× | 0.470× | 0.417× | 0.419× |
+| `review-nin-collisions-3000` | construct | 49.674–78.807× | 0.243× | 0.466× | 0.394× | 0.406× |
+| `review-in-collisions-100` | single-use | 1.240–2.016× | 0.628× | 0.724× | 0.702× | 0.701× |
+| `review-in-collisions-1000` | single-use | 10.026–16.402× | 0.568× | 0.700× | 0.646× | 0.657× |
+| `review-in-collisions-3000` | single-use | 28.139–46.927× | 0.539× | 0.672× | 0.629× | 0.642× |
+| `review-subclass-key-eq` | match | wrong answer | 1.305× | 1.236× | 1.225× | 1.214× |
+| `review-subclass-key-ne` | match | wrong answer | 1.311× | 1.271× | 1.234× | 1.221× |
 
-Single use inherits the matching cost where construction does not offset it:
-`review-wide-dict-empty-*` is 1.335–1.504× / 4.212–5.994× / 29.842–45.189× at
-100 / 1,000 / 10,000 members, and `review-wide-list-empty-*` 1.015–1.165× /
-2.353–3.012× / 12.806–20.449×. `review-wide-dict-first-mismatch-1000` and
-`-10000` single use are 0.931–1.056× and 0.941–1.066×; the 3.11/3.12 values are
-just beyond their single-use controls, and the 1,000-member case rechecked at
-1.031–1.066× on 3.11–3.13. Wide-list first-mismatch single use is
-faster (0.394–0.722×) because construction skips per-operand preparation.
+`review-*-collisions-*` matching is 0.94–1.01× (before 0.06–0.12×): colliding lists
+are no longer hashed, so they scan in order like 1.0.1. Wide-dict empty-operand
+construction is 1.00–1.10× (see below). The `per-fix/` run attributes each change:
+fix 1 alone removes the wide-container regressions
+(`review-wide-list-first-mismatch-1000`/`-10000` rechecked at 0.999–1.010×; see below), fix 2 the wrong answers and fix 3
+the collision costs. Fixes 4 and 5 change no measured case beyond noise.
 
-**Colliding `$in`/`$nin` construction.** An all-plain operand list becomes a
-`frozenset`. Integers `i * sys.hash_info.modulus` share one hash, so building the
-set costs quadratic equality probes. Construction, 1.0.2 / 1.0.1:
+### Remaining cases slower than 1.0.1
 
-| Case | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | 3.11 µs, 1.0.1 → 1.0.2 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `review-in-collisions-100` | 1.939× | 3.083× | 3.022× | 2.911× | 29.0 → 89.2 |
-| `review-in-collisions-1000` | 16.851× | 27.205× | 26.837× | 26.063× | 237 → 6,427 |
-| `review-in-collisions-3000` | 49.769× | 78.621× | 78.650× | 75.677× | 698 → 54,875 |
+Every case beyond its interpreter's identical-source control range in the default
+run, or initially above 1.03×, was rechecked. These remain slower in the recheck,
+whose controls were 0.986–1.014×:
 
-`review-nin-collisions-*` are within about 1% of these. Single use is 1.222–2.016× /
-10.026–16.402× / 28.139–46.968× at 100 / 1,000 / 3,000 operands. Reused matching
-of the same colliding lists is still faster than 1.0.1 (0.060–0.120×).
+| Case | Operation | Recheck 1.0.2 / 1.0.1 | Cause |
+| --- | --- | ---: | --- |
+| `ordered-key-mismatch` | match | 1.124–1.231× | exact-`str` key check (fix 2) |
+| `ordered-key-mismatch` | single use | 1.044–1.110× | same |
+| `review-subclass-key-{eq,ne}` | match | 1.187–1.309× | failed key check before `equal()` (fix 2) |
+| `review-subclass-key-{eq,ne}` | single use (3.10 only) | 1.088× | same |
+| `document-scan-*`, `ordered-key-mismatch` | construct (3.10, 3.12, 3.13) | 1.039–1.090× | operand key check at preparation (fix 2) |
+| `review-wide-dict-empty-*` | construct (3.10, 3.12, 3.13) | 1.029–1.080× | same, for the empty dict operand |
+| `review-in-1-{0,1}` | construct (3.12 only) | 1.038–1.039× | collision guard (fix 3) |
+| `date-scan-early` | match (3.10 only) | 1.032× | unconverted-type check before date conversion |
+| `all-singleton-document-0`, `value-native-document-0`, `document-scan-early` | single use (3.10 only) | 1.023–1.039× | construction cost above |
 
-**Rechecked small differences.** Every other initial ratio above 1.03× was within
-its control range. Those cases were rechecked with 1.0.1 and the candidate only,
-six processes × 16 blocks × 10 ms (match and single use). The rechecks confirm two
-small Python 3.10 costs: `date-scan-early` 1.034× → 1.037× and
-`ordered-key-mismatch` 1.047× → 1.033× (controls 0.997× and 1.003×). The
-unconverted-type check now runs before date conversion, and swapped-key dicts are
-compared by value before key order. Python 3.13 `elem-match-value-all-99` stays at
-1.028× (control 0.980×), at the edge of the noise. The other 20 initial
-observations (13 cases), 1.030–1.089×, rechecked at 0.951–1.014×: `value-array-0`,
-`mod-scan-early`, `mod-float-early`, `gte-int-float-array-last`, `empty-all`,
-`empty-all-negated`, `all`, `all-scalar`, `empty-suffix-indexed-size-None`,
-`path-eq-0`, `scalar-array-null`, `numeric-miss`, `mixed-miss`. The rechecks also
-reproduced `review-wide-list-empty-100` (2.206–3.289× matching) and
-`review-wide-dict-first-mismatch-1000` (11.142–17.119×).
+These are absolute costs of 0.1–0.4 µs. Initially flagged and cleared on recheck:
+`review-wide-list-first-mismatch-1000`/`-10000` (0.999–1.010×), `value-array-0`,
+`elem-match-value-all-99`, `mod-scan-early`, `mod-float-early`, `all`,
+`all-singleton`, `lt-*-array-miss`, `path-eq-0` and `construct-and-100`. The wide-list
+cases read 1.185–1.279× in the default run, against controls as low as 0.846×; their
+fast-version blocks are short.
 
 ### Improvements
 
@@ -222,48 +241,47 @@ this run (ranges across the four Pythons):
 
 | Matching | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | 1.0.1 / 0.9.0 | 1.0.2 / 0.9.0 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Numeric-index miss | 0.240× | 0.290× | 0.268× | 0.287× | 7.390–8.946× | 2.050–2.543× |
-| `$exists` over subdocuments, last hit | 0.237× | 0.299× | 0.276× | 0.311× | 0.655–0.822× | 0.198–0.208× |
-| Subdocument field, last hit | 0.814× | 0.834× | 0.848× | 0.837× | 0.306–0.328× | 0.257–0.277× |
-| Flat-document equality, last hit | 0.386× | 0.384× | 0.388× | 0.361× | 0.871–1.023× | 0.335–0.389× |
-| Path `$in` of two, last hit | 0.383× | 0.408× | 0.449× | 0.388× | 0.255–0.297× | 0.104–0.131× |
-| `$in`, last of 1,000 | 0.004× | 0.005× | 0.005× | 0.004× | 0.206–0.224× | 0.001× |
-| Singleton array `$all`, last hit | 0.367× | 0.365× | 0.384× | 0.334× | 11.399–15.428× | 4.181–5.237× |
-| Singleton document `$all`, last hit | 1.002× | 0.995× | 0.993× | 1.009× | 14.328–17.714× | 14.286–17.451× |
-| Ordered-document equality, last hit | 1.002× | 1.003× | 0.997× | 1.002× | 1.270–1.487× | 1.268–1.495× |
+| Numeric-index miss | 0.236× | 0.277× | 0.255× | 0.285× | 7.343–9.167× | 2.092–2.526× |
+| `$exists` over subdocuments, last hit | 0.239× | 0.291× | 0.273× | 0.306× | 0.649–0.839× | 0.198–0.200× |
+| Subdocument field, last hit | 0.831× | 0.817× | 0.805× | 0.822× | 0.304–0.329× | 0.247–0.268× |
+| Flat-document equality, last hit | 0.611× | 0.619× | 0.621× | 0.578× | 0.882–1.049× | 0.542–0.633× |
+| Path `$in` of two, last hit | 0.387× | 0.405× | 0.393× | 0.395× | 0.253–0.297× | 0.103–0.117× |
+| `$in`, last of 1,000 | 0.004× | 0.005× | 0.005× | 0.004× | 0.199–0.222× | 0.001× |
+| Singleton array `$all`, last hit | 0.438× | 0.410× | 0.432× | 0.389× | 11.666–16.236× | 4.802–6.285× |
+| Singleton document `$all`, last hit | 1.002× | 1.000× | 1.000× | 0.999× | 14.028–17.951× | 13.960–17.941× |
+| Ordered-document equality, last hit | 1.018× | 1.000× | 1.000× | 1.001× | 1.254–1.494× | 1.284–1.494× |
 
-Nested-document equality and singleton document `$all` are unchanged: their
-members are compared recursively, as in 1.0.1. Across the 308 comparable cases,
-the median matching ratio is 0.995–0.996×; identical-source matching controls
-ranged 0.769–1.177×.
+Nested-document equality and singleton document `$all` are unchanged: their members
+are compared recursively, as in 1.0.1. Flat-document equality is slower than before
+the fixes (0.36–0.39×) because of the length and key checks. Across 310 cases, the
+median matching ratio is 0.994–0.997×; identical-source matching controls ranged
+0.754–1.164×.
 
-Construction, ranges across the four Pythons (median 0.773–0.810×; controls
-0.977–1.037×):
+Construction, ranges across the four Pythons (median 0.781–0.832×; controls
+0.967–1.023×):
 
 | Construction | 1.0.1 (µs) | 1.0.2 (µs) | 1.0.2 / 1.0.1 |
 | --- | ---: | ---: | ---: |
-| Flat equality | 2.221–3.386 | 1.431–2.293 | 0.657–0.673× |
-| 100-clause `$and` | 224–312 | 146–204 | 0.654–0.671× |
-| 10,000-clause `$and` | 26,116–35,114 | 23,269–30,065 | 0.853–0.887× |
-| `$in` of 1,000 | 203–328 | 74–99 | 0.227–0.420× |
-| `$in` of 10,000 | 2,073–3,226 | 696–949 | 0.215–0.404× |
-| Compiled regex | 10.773–16.409 | 2.757–4.331 | 0.255–0.293× |
-| `$regex` string | 5.179–7.641 | 4.031–6.195 | 0.777–0.812× |
+| Flat equality | 2.362–3.368 | 1.486–2.361 | 0.656–0.705× |
+| 100-clause `$and` | 223–313 | 148–209 | 0.662–0.703× |
+| 10,000-clause `$and` | 26,710–35,839 | 23,876–32,370 | 0.892–0.901× |
+| `$in` of 1,000 | 206–335 | 95.079–121 | 0.284–0.528× |
+| `$in` of 10,000 | 2,093–3,496 | 928–1,165 | 0.267–0.511× |
+| Compiled regex | 10.825–16.433 | 2.728–4.379 | 0.253–0.287× |
+| `$regex` string | 5.181–7.701 | 4.103–6.392 | 0.788–0.830× |
 
-Single use, ranges across the four Pythons (median 0.825–0.844×; controls
-0.877–1.070×):
+Single use, ranges across the four Pythons (median 0.823–0.856×; controls
+0.855–1.135×):
 
 | Single use | 1.0.1 (µs) | 1.0.2 (µs) | 1.0.2 / 1.0.1 |
 | --- | ---: | ---: | ---: |
-| Flat equality | 2.706–4.172 | 1.854–3.024 | 0.689–0.732× |
-| Numeric-index miss | 18.197–30.663 | 5.948–8.757 | 0.284–0.332× |
-| `$in`, last of 1,000 | 345–554 | 75–100 | 0.135–0.252× |
-| Singleton array `$all`, last hit | 58.752–89.293 | 25.753–39.091 | 0.392–0.446× |
-| Singleton document `$all`, last hit | 109.524–157.181 | 108.658–156.015 | 0.984–1.002× |
+| Flat equality | 2.607–4.146 | 1.851–3.131 | 0.712–0.752× |
+| Numeric-index miss | 18.064–30.616 | 5.776–8.880 | 0.291–0.335× |
+| `$in`, last of 1,000 | 351–562 | 96.529–124 | 0.175–0.316× |
+| Singleton array `$all`, last hit | 58.941–88.007 | 29.025–44.993 | 0.438–0.508× |
+| Singleton document `$all`, last hit | 108–156 | 108–157 | 0.984–1.007× |
 
-Absolute ranges and ratio ranges are calculated independently. Eligible 0.9.0
-comparisons: 252 cases on Python 3.10 and 258 on 3.11–3.13; 0.9.0 wrong answers,
-rejections and crashes remain flagged in each CSV/JSON and have no ratio.
+Absolute ranges and ratio ranges are calculated independently.
 
 ## 0.9.0 versus 1.0.1 baseline
 
