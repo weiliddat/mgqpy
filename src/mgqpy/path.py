@@ -1,5 +1,6 @@
 """Compiled dotted paths and existential traversal (internal)."""
 
+from functools import lru_cache
 from typing import Any, Callable
 
 from .utils import is_array_index
@@ -11,9 +12,17 @@ ValueMatch = Callable[[Any, Any], bool]
 
 
 def compile_path(path: str) -> Path:
+    # A subclass equal to a cached string may still split differently.
+    return _compile_cached(path) if type(path) is str else _compile(path)
+
+
+def _compile(path):
     # Longer digit strings cannot index a Python list; keep their field spelling.
     return tuple((key, int(key) if is_array_index(key) and len(key) < 20 else None)
                  for key in path.split("."))
+
+
+_compile_cached = lru_cache(maxsize=1024)(_compile)
 
 
 def bind_path(parts: Path, match: ValueMatch, operand, expand_leaf=True):
@@ -62,10 +71,17 @@ def _walk(value, parts, offset, match, operand, expand_leaf, end, ends_empty):
             # still consume literal empty keys (including repeated dots).
             if ends_empty and offset + 1 == end:
                 break
+            missing_checked = False
             for child in value:
                 if isinstance(child, dict):
-                    if _walk(child, parts, offset, match, operand, expand_leaf, end, ends_empty):
-                        return True
+                    if key in child:
+                        if _walk(child[key], parts, offset + 1, match, operand, expand_leaf, end, ends_empty):
+                            return True
+                    elif not missing_checked:
+                        # Every child without the key reaches the same missing value.
+                        if match(MISSING, operand):
+                            return True
+                        missing_checked = True
             return False
         else:
             return match(MISSING, operand)

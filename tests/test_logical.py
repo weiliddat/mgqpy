@@ -253,3 +253,36 @@ def test_dict_key_comparison_normalizes_truth_and_propagates_errors(op, key, exp
             Query(query).test(doc)
         assert caught.value is error
         Key.fail = False
+
+
+@pytest.mark.parametrize("side", ["query", "document"])
+def test_dict_key_equality_uses_the_keys_own_inequality(side):
+    class FoldKey(str):
+        def __eq__(self, other):
+            return self.casefold() == str(other).casefold()
+
+        __hash__ = str.__hash__
+
+    error = RuntimeError("key comparison failed")
+
+    class RaisingKey(str):
+        def __ne__(self, other):
+            raise error
+
+        __hash__ = str.__hash__
+
+    def pair(key):
+        special = {key: 1}
+        return (special, {"a": 1}) if side == "query" else ({"a": 1}, special)
+
+    # str's inherited != decides, not the case-folding ==.
+    operand, value = pair(FoldKey("A"))
+    assert Query({"x": {"$eq": operand}}).test({"x": value}) is False
+    assert Query({"x": {"$ne": operand}}).test({"x": value}) is True
+    operand, value = pair(FoldKey("a"))
+    assert Query({"x": {"$eq": operand}}).test({"x": value}) is True
+    operand, value = pair(RaisingKey("a"))
+    for op in ("$eq", "$ne"):
+        with pytest.raises(RuntimeError) as caught:
+            Query({"x": {op: operand}}).test({"x": value})
+        assert caught.value is error

@@ -1,4 +1,4 @@
-# Versioned performance baseline
+# Versioned performance benchmarks
 
 `run.py` compares **any two or more local git refs/tags**, without checking them
 out or installing mgqpy. It needs Git and Python 3.10+, not MongoDB, pytest or
@@ -99,131 +99,159 @@ a recheck convention, not a pass/fail threshold or a confidence interval.
 
 Report individual regressions, including full scans and early rejections. Do not
 hide them in an average speedup. Recheck suspected small regressions with six
-fresh processes/16 blocks and inspect identical-source variation. Keep the initial
+fresh processes/16 blocks and inspect identical-source variation. Report the initial
 run too; disclose which cases were rechecked instead of selecting favorable runs.
 These are warmed CPU-only shared-machine observations, not CI thresholds,
 latency guarantees, memory measurements or application-distribution benchmarks.
 
-## 0.9.0 versus 1.0.1 baseline
+## Current snapshot
 
-The full baseline is in [`baseline/`](baseline/): one JSON/CSV pair per supported
-Python. It compares **0.9.0**
-([source](https://github.com/weiliddat/mgqpy/commit/f22a920babc0a37dd07fbe4dae94632f81d9b79d))
-with **1.0.1**
-([source](https://github.com/weiliddat/mgqpy/commit/8addeeec3c6aed6d534b1b2b46ecd61e3d29fd87)),
-not the unmerged `v1-performance` branch.
-
-Saved results use [runner b54687b](https://github.com/weiliddat/mgqpy/commit/b54687b0b2c0e2f8d2044cb6cea5f995ae63ff59),
-before the timed-predicate guards and per-variant module/input isolation. Both
-source refs have no deferred imports and leave the fixtures unchanged in an
-untimed reuse audit. The timed operations are unchanged; these numbers are kept.
-
-Reproduce with the defaults above (no release tags currently exist):
+[`snapshot/`](snapshot/) holds one CSV/JSON pair per supported Python. Each run
+measures **0.9.0** ([source](https://github.com/weiliddat/mgqpy/commit/f22a920babc0a37dd07fbe4dae94632f81d9b79d)),
+**1.0.1** ([source](https://github.com/weiliddat/mgqpy/commit/8addeeec3c6aed6d534b1b2b46ecd61e3d29fd87))
+and **1.0.2** ([source](https://github.com/weiliddat/mgqpy/commit/4615072fb940c19cda4313f08e9a12126eee0976))
+together. The JSON omits the raw per-block samples to save space. It keeps the
+hardware, configuration, hashes, statuses and per-case medians, and each timing adds
+`paired_ratio_to_previous`: the 1.0.2 / 1.0.1 median of the paired block ratios.
 
 ```sh
 for py in 3.10 3.11 3.12 3.13; do
   uv run --no-project --python "$py" python benchmarks/run.py \
     0.9.0=f22a920babc0a37dd07fbe4dae94632f81d9b79d \
     1.0.1=8addeeec3c6aed6d534b1b2b46ecd61e3d29fd87 \
-    --output "/tmp/mgqpy-$py.json"
+    1.0.2=4615072fb940c19cda4313f08e9a12126eee0976 \
+    --output "/tmp/snapshot/python-$py.json"
 done
 ```
 
-Measured 2026-10-19 in a shared Linux x86-64 Amp orb, Intel Xeon @ 2.60 GHz.
-Interpreters ran serially, each pinned to logical CPU 0, using the default two
-processes × 12 blocks and all three operations. Every 1.0.1 case returned its
-expected boolean before and after timing. No selective rechecks replace these
-results. Units below are µs per invocation; ratios are **1.0.1 / 0.9.0**, lower
-is faster.
+Then copy the CSVs to `benchmarks/snapshot/` and write each JSON there without its
+samples, running this as `python slim.py SOURCE.json DESTINATION.json`:
 
-| Matching | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 |
+```python
+import json, statistics, sys
+d = json.load(open(sys.argv[1]))
+prev, last = list(d["refs"])[-2:]
+for i, row in enumerate(d["results"]):
+    for op, timing in row["timings"].items():
+        if row["status"][prev]["eligible"] and row["status"][last]["eligible"]:
+            ratios = [b / a for run in d["runs"]
+                      for s in [run["rows"][i]["timings"][op]["samples_us"]]
+                      for a, b in zip(s[prev], s[last])]
+            timing["paired_ratio_to_previous"] = statistics.median(ratios)
+d["runs"] = [{k: v for k, v in run.items() if k != "rows"} for run in d["runs"]]
+d["samples"] = "omitted; per-case medians and paired ratios are in results"
+json.dump(d, open(sys.argv[2], "w"), separators=(",", ":"))
+```
+
+Measured 2026-10-20 with the runner from the 1.0.2 source, in a shared Linux x86-64
+Amp orb (Intel Xeon @ 2.60 GHz, 8 logical CPUs). Interpreters ran serially, pinned to
+logical CPU 0 with `--cpu 0` (Linux only), with the defaults: two processes × 12 blocks, all operations. Every case
+returned its expected boolean in 1.0.1 and 1.0.2, and all four runs exit 0.
+
+| CPython | Eligible against 0.9.0, of 311 | Identical-source matching | Construction | Single use |
 | --- | ---: | ---: | ---: | ---: |
-| Flat equality | 0.343× | 0.331× | 0.340× | 0.319× |
-| Deep dict path | 0.343× | 0.366× | 0.382× | 0.411× |
-| Mixed numeric range, last hit | 0.122× | 0.119× | 0.131× | 0.106× |
-| `$in`, last of 1,000 | 0.232× | 0.206× | 0.230× | 0.200× |
-| Numeric `$all`, late hit | 0.891× | 0.921× | 0.907× | 1.062× |
-| Ordered-document equality, last hit | 1.341× | 1.343× | 1.418× | 1.410× |
-| Ordered-document equality, all miss | 1.351× | 1.346× | 1.410× | 1.430× |
-| Numeric-index miss | 9.279× | 7.598× | 9.212× | 8.441× |
-| Singleton document `$all`, last hit | 17.161× | 13.766× | 14.302× | 18.458× |
-| Singleton document `$all`, all miss | 17.545× | 13.669× | 14.845× | 18.757× |
-| Singleton array `$all`, last hit | 14.416× | 11.601× | 12.706× | 15.840× |
-| Singleton array `$all`, all miss | 14.886× | 11.820× | 12.611× | 15.788× |
+| 3.10.20 | 253 | 0.807–1.120× | 0.986–1.045× | 0.848–1.152× |
+| 3.11.6 | 259 | 0.764–1.077× | 0.976–1.029× | 0.902–1.102× |
+| 3.12.13 | 259 | 0.896–1.159× | 0.980–1.016× | 0.903–1.094× |
+| 3.13.13 | 259 | 0.702–1.190× | 0.977–1.021× | 0.864–1.232× |
 
-The slower cases remain slower on repeated matching; query reuse does not remove
-their costs. Numeric-index misses include the literal-field alternatives 0.9
-skipped. Ordered containers require typed recursive comparison instead of Python's
-C-level equality. Numeric `$all` is not a blanket improvement: the 3.13 observation
-is 1.062×. This baseline does not claim exact parity or a universal speedup.
+The 58 cases flagged on 3.10 and 52 on 3.11+ are 0.9.0 rejections, exceptions and
+wrong answers; 3.10 adds 0.9.0's explicit-regex failures. Ratios below are medians of
+paired block ratios, lower is faster. Across the 311 cases, the median 1.0.2 / 1.0.1
+ratio is 0.986–0.996× for matching, 0.780–0.822× for construction and 0.818–0.856× for
+single use, depending on the Python.
 
-Construction ranges across the four Pythons, deliberately separate from matching:
+| Matching, 1.0.2 / 1.0.1 | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | 1.0.1 / 0.9.0 | 1.0.2 / 0.9.0 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Numeric-index miss | 0.238× | 0.306× | 0.272× | 0.291× | 7.308–8.950× | 2.008–2.581× |
+| `$exists` over subdocuments, last hit | 0.246× | 0.299× | 0.284× | 0.309× | 0.653–0.831× | 0.199–0.206× |
+| Subdocument field, last hit | 0.839× | 0.835× | 0.832× | 0.823× | 0.309–0.331× | 0.259–0.272× |
+| Flat-document equality, last hit | 0.605× | 0.608× | 0.622× | 0.580× | 0.888–1.031× | 0.546–0.630× |
+| Path `$in` of two, last hit | 0.389× | 0.406× | 0.408× | 0.397× | 0.257–0.291× | 0.106–0.118× |
+| `$in`, last of 1,000 | 0.004× | 0.005× | 0.005× | 0.005× | 0.207–0.221× | 0.001× |
+| Singleton array `$all`, last hit | 0.432× | 0.420× | 0.434× | 0.383× | 11.424–16.364× | 4.778–6.300× |
+| Singleton document `$all`, last hit | 0.998× | 0.995× | 0.998× | 0.997× | 14.401–17.570× | 14.167–17.288× |
+| Ordered-document equality, last hit | 0.990× | 0.971× | 1.001× | 0.996× | 1.275–1.488× | 1.250–1.487× |
 
-| Construction | 0.9.0 unchecked reference (µs) | 1.0.1 copy/validate/compile (µs) |
-| --- | ---: | ---: |
-| Flat equality | 0.113–0.221 | 2.197–3.461 |
-| `$in` of 1,000 | 0.188–0.282 | 201–333 |
-| `$in` of 10,000 | 0.320–0.414 | 2,001–3,348 |
-| 100-clause `$and` | 0.205–0.303 | 220–310 |
-| 10,000-clause `$and` | 0.360–0.461 | 25,394–35,993 |
-| Compiled regex | 0.146–0.236 | 10.734–16.222 |
-| `$regex` string | 0.109–0.215 | 5.122–7.696 |
-| `$in`, 3,000 colliding integers | 0.215–0.330 | 598–1,005 |
+Nested-document equality and singleton document `$all` compare their members
+recursively, as in 1.0.1, so they are unchanged and remain much slower than 0.9.0.
 
-These constructors have different contracts, not comparable validation costs.
-0.9.0's constructor can be timed for `$regex` on 3.10, but its matching raises;
-there is no paired speedup ratio for that case.
+Construction and single use, ranges across the four Pythons. 0.9.0's constructor
+stores a reference; 1.x copies, validates and compiles the query, so construction has
+no 0.9.0 ratio.
 
-Actual single-use `Query(q).test(doc)`, ranges across the four Pythons (late-hit
-rows only here; all-miss controls remain in the CSV/JSON):
-
-| Single use | 0.9.0 (µs) | 1.0.1 (µs) | Paired ratio range |
-| --- | ---: | ---: | ---: |
-| Flat equality | 1.340–2.318 | 2.608–4.202 | 1.822–1.993× |
-| Mixed numeric range, last hit | 70.0–119.2 | 12.8–20.5 | 0.161–0.194× |
-| `$in`, last of 1,000 | 638–1,013 | 349–572 | 0.483–0.571× |
-| Numeric `$all`, late hit | 3.366–4.977 | 9.499–14.368 | 2.382–2.937× |
-| Ordered-document equality, last hit | 70.4–107.3 | 104.0–153.3 | 1.415–1.475× |
-| Numeric-index miss | 1.880–3.240 | 17.820–31.411 | 8.485–9.882× |
-| Singleton document `$all`, last hit | 6.434–8.715 | 109.6–157.9 | 14.874–18.545× |
-| Singleton array `$all`, last hit | 3.903–5.631 | 60.8–94.4 | 12.200–16.902× |
-
-Absolute ranges and paired-ratio ranges are calculated independently; dividing
-range endpoints does not reproduce a paired ratio.
-
-The new review controls have a 1.0.1 baseline too. Representative Python 3.11
-matching medians, in µs:
-
-| Case | 1.0.1 |
-| --- | ---: |
-| Empty dict versus 10,000-field dict | 0.582 |
-| Empty list versus 10,000-member list | 1.172 |
-| Same-length 10,000-field dict, first value misses | 1.063 |
-| Same-length 10,000-member list, first value misses | 1.597 |
-| 10,000-field whole document, field hit / missing | 0.491 / 0.326 |
-
-Python 3.11 colliding-integer `$in` construction takes 28.282 / 231.304 / 679.378 µs
-at 100 / 1,000 / 3,000 operands. These numbers measure 1.0.1, not #21's hash-set
-implementation.
-
-| CPython | Same-answer eligible cases / 310 | Identical-source matching | Construction | Single use |
+| Construction | 0.9.0 (µs) | 1.0.1 (µs) | 1.0.2 (µs) | 1.0.2 / 1.0.1 |
 | --- | ---: | ---: | ---: | ---: |
-| 3.10.21 | 252 | 0.840–1.221× | 0.985–1.029× | 0.949–1.169× |
-| 3.11.6 | 258 | 0.804–1.197× | 0.981–1.026× | 0.926–1.168× |
-| 3.12.14 | 258 | 0.819–1.135× | 0.983–1.037× | 0.933–1.158× |
-| 3.13.15 | 258 | 0.772–1.146× | 0.982–1.025× | 0.934–1.208× |
+| Flat equality | 0.108–0.194 | 2.146–3.401 | 1.432–2.349 | 0.665–0.692× |
+| 100-clause `$and` | 0.192–0.272 | 220–312 | 146–208 | 0.664–0.690× |
+| 10,000-clause `$and` | 0.329–0.385 | 25,868–36,779 | 23,339–32,528 | 0.886–0.903× |
+| `$in` of 1,000 | 0.192–0.267 | 202–329 | 94.682–121 | 0.287–0.518× |
+| `$in` of 10,000 | 0.258–0.346 | 2,028–3,199 | 883–1,171 | 0.276–0.515× |
+| Compiled regex | 0.104–0.200 | 10.584–16.540 | 2.641–4.354 | 0.249–0.283× |
+| `$regex` string | 0.103–0.203 | 5.022–7.774 | 3.961–6.329 | 0.788–0.828× |
 
-The 58/52 flagged older cases include validation rejection, exceptions and wrong
-answers, not 1.0.1 failures. Python 3.10 adds the explicit-regex failures. Exact
-per-case statuses are in each CSV/JSON. The wide control ranges above are real
-observations, especially on very short fast-version blocks; they are not error
-bars or a license to dismiss a particular regression. Small future changes need
-nearby-ref comparisons and focused rechecks, not division by these saved medians.
+| Single use | 0.9.0 (µs) | 1.0.1 (µs) | 1.0.2 (µs) | 1.0.2 / 1.0.1 | 1.0.2 / 0.9.0 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Flat equality | 1.298–2.337 | 2.553–4.183 | 1.848–3.089 | 0.722–0.742× | 1.322–1.473× |
+| Numeric-index miss | 1.832–3.359 | 17.886–30.674 | 5.697–8.799 | 0.286–0.340× | 2.596–3.291× |
+| `$in`, last of 1,000 | 630–1,068 | 344–558 | 96.361–122 | 0.172–0.313× | 0.090–0.163× |
+| Singleton array `$all`, last hit | 3.764–5.836 | 58.791–89.723 | 28.852–44.696 | 0.439–0.495× | 5.928–7.622× |
+| Singleton document `$all`, last hit | 6.458–9.001 | 109–157 | 108–158 | 0.989–0.999× | 14.786–18.449× |
+
+Absolute ranges and ratio ranges are calculated independently.
+
+Colliding `$in`/`$nin` lists (`review-{in,nin}-collisions-*`) are not hashed, so they
+match like 1.0.1 (0.973–1.010×) and construct at 0.248–0.578×. Empty dict and list
+operands against wide values match at 0.721–0.953×; same-length wide values whose
+first member differs match at 0.977–1.006× after the recheck below.
+
+### Remaining cases slower than 1.0.1
+
+Every observation above 1.03× 1.0.2 / 1.0.1 in the snapshot (34 case/operation pairs
+over 27 cases) was rechecked on all four Pythons with 1.0.1 and 1.0.2 only: six processes × 16
+blocks × 10 ms, the four Pythons at once on logical CPUs 0, 2, 4 and 6. The rechecks were
+run but are not stored. Their identical-source controls were 0.988–1.031× for matching,
+0.993–1.010× for construction and 0.993–1.020× for single use.
+
+| Case | Operation | Snapshot | Recheck | Extra per call | Cause |
+| --- | --- | ---: | ---: | ---: | --- |
+| `review-flat-dict-16-first-mismatch` | match | 1.192–1.378× | 1.211–1.382× | 0.29–0.39 µs | certifies all 16 members (see below) |
+| `review-flat-dict-16-first-mismatch` | construct | 1.033–1.079× | 1.026–1.076× | 0.21–0.37 µs | same |
+| `review-flat-dict-16-first-mismatch` | single use | 1.041–1.109× | 1.042–1.111× | 0.36–0.71 µs | same |
+| `review-subclass-key-{eq,ne}` | match | 1.202–1.275× | 1.205–1.300× | 0.18–0.42 µs | key check fails before `equal()` |
+| `review-subclass-key-{eq,ne}` | single use (3.10) | 1.078–1.097× | 1.082–1.094× | 0.63–0.81 µs | same |
+| `ordered-key-mismatch` | match | 1.112–1.223× | 1.117–1.217× | 0.11–0.29 µs | flat-dict shortcut fails on key order, then `equal()` |
+| `ordered-key-mismatch` | single use | 1.061–1.107× | 1.050–1.097× | 0.23–0.59 µs | same, plus construction |
+| `ordered-key-mismatch`, `document-scan-*` | construct (not 3.11) | 1.038–1.102× | 1.033–1.090× | 0.10–0.38 µs | operand key check |
+| `review-wide-dict-empty-*` | construct (not 3.11) | 1.020–1.090× | 1.017–1.074× | 0.04–0.25 µs | same, for the empty operand |
+| `review-in-1-{0,1}` | construct (3.12) | 1.033–1.036× | 1.031–1.034× | 0.14–0.16 µs | collision guard |
+
+Per call, that is up to 0.42 µs when matching, 0.38 µs when constructing and 0.81 µs
+for single use, largest on 3.10. On 3.11 those construction cases read 0.983–1.013×,
+and `review-in-1-1` construction on 3.10 reads 1.016× (0.08 µs). The other 17
+observations read 0.935–1.018× on recheck, within their controls:
+`review-wide-list-first-mismatch-{1000,10000}` (1.075–1.173× in the snapshot against
+controls as low as 0.854×; their fast-version blocks are short), `value-array-0`,
+`mod-{scan,float,decimal}-early`, `date-scan-early`, `uuid-scan-early`, `path-eq-0`,
+`{gt,lt}-int-float-array-miss`, `numeric-miss`, `empty-all`, `and-or`,
+`all-elem-match-document`, and `document-scan-early` and `review-wide-dict-empty-100`
+single use.
+
+**Known bounded tradeoff.** A flat dict of up to 16 plain members is certified and then
+compared in C. When the document value's first member already differs, `equal()` would
+stop there, so certifying every member costs more; that is
+`review-flat-dict-16-first-mismatch` above. In return a full hit or late miss of 16
+members takes 0.38–0.68× of 1.0.1's time (an uncommitted 3.11 comparison with scratch
+cases), and lowering the cutoff to 8 traded those gains for the cost above. Sizes above 16
+use `equal()`. The cutoff and the design are deliberate.
+
+Earlier rounds on #21 (the pre-fix snapshot, per-fix attribution and focused checks)
+are summarised in [HISTORY.md](HISTORY.md#102-review-rounds-on-21).
 
 ## Case inventory and the claims it supports
 
-There are **310 cases**, with all three operations available for every eligible
-case: 202 original matching fixtures + 56 whole-stack additions + 52 controls.
+There are **311 cases**, with all three operations available for every eligible
+case: 202 original matching fixtures + 56 whole-stack additions + 53 controls.
 The original 27 construction fixtures are a subset of the 202; none were lost.
 Names and expected results are listed by `--list`; the executable query/document
 definitions live in one file rather than a second inventory of copied inputs.
@@ -247,17 +275,17 @@ otherwise. `None` in older case names means all miss, not a null operand.
 | #21 uncovered early-rejection costs | `review-wide-{dict,list}-empty-*`, `review-wide-{dict,list}-first-mismatch-*` at 100/1,000/10,000 members; explicit index selects whole inner lists |
 | #21 hash-collision construction | `review-{in,nin}-collisions-{100,1000,3000}`; integers `i * sys.hash_info.modulus`, intentionally outside BSON int64 |
 | Wide whole documents / large construction | `wide-document-{hit,miss}-*`, `construct-{in,and}-*` at 100/1,000/10,000; `review-wide-and` fails at its first field but compiles 100 clauses |
-| Membership crossover and compatibility controls | `review-in-{1,2,10}-*`, `review-flat-list`, `review-subclass-key-{eq,ne}` |
+| Membership crossover and compatibility controls | `review-in-{1,2,10}-*`, `review-flat-list`, `review-subclass-key-{eq,ne}`, `review-flat-dict-16-first-mismatch` |
 
 The exact recovered cases back all published workload rows. They do **not** make
 all historical claims reproducible from refs: eager/generator comparison columns
 used temporary AST rewrites, and the guard-only numeric experiment used a monkey
 patch. Neither is retained as another execution mode. Historical branch gates
-used different source revisions and stronger selective rechecks; this baseline
+used different source revisions and stronger selective rechecks; this snapshot
 does not claim to repeat those gates. 0.9 explicit regex on Python 3.10 cannot be
 timed because `re.NOFLAG` is missing. Wrong/rejected old results remain in the
-output. No #21 performance claim is independently remeasured by this baseline;
-the broader controls are here to measure its fixes later.
+output. The current snapshot measures #21's changes, including its review fixes,
+with these cases.
 
 Undefined compiled-regex flags from the review are not a timed workload: their
 acceptance already differs between Python 3.10 and 3.11 in 1.0.1, and unsupported
@@ -278,16 +306,20 @@ their targeted cases and timing method are integrated here, not their large
 fuzzing corpus or hard-coded three-version runner. [Historical tables](HISTORY.md)
 retain the prior numbers and their original caveats.
 
-## Updating the baseline and retired tooling
+## Updating the snapshot and retired tooling
 
-Before releases that change matching, traversal, comparison, validation,
-construction or supported Pythons, compare the previous release with the candidate
-on all supported Pythons. Add representative cases for newly affected shapes
-before measuring. Keep existing cases stable; explain deliberate input/expectation
-changes. Save new result pairs in a release-named directory, keep the original
-baseline, and update this README with source IDs, environment, per-case changes,
-noise and exclusions. Prefer comparing refs in a fresh run over dividing absolute
-times from different machines. There is no performance workflow or CI gate.
+The repository keeps **one current snapshot**: 0.9.0, the previous release and the
+current release measured together in one run per supported Python. It is replaced
+only when runtime code changes, by a full rerun on one machine. Before a release
+that changes matching, traversal, comparison, validation, construction or supported
+Pythons, compare the previous release with the candidate on all supported Pythons
+as a quick check against the snapshot's ballpark; those runs and their rechecks are
+not committed. Add representative cases for newly affected shapes before measuring,
+and keep existing cases stable. When the snapshot is replaced, update the
+[current snapshot](#current-snapshot) section with source IDs, environment, per-case
+changes, noise and a summary of the rechecks, and move the superseded tables to
+[HISTORY.md](HISTORY.md). Prefer comparing refs in a fresh run over dividing
+absolute times from different machines. There is no performance workflow or CI gate.
 
 Removed/replaced:
 

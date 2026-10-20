@@ -3,12 +3,14 @@
 from datetime import date, datetime, timezone
 from decimal import Decimal
 import random
+import sys
 from uuid import UUID
 
 import pytest
 
 from mgqpy import Query
 import mgqpy.comparison as comparison
+from mgqpy.operators.in_nin import prepare_in
 
 
 # Subclasses retain their values but bypass exact-type comparison/membership paths.
@@ -79,3 +81,36 @@ def test_fast_paths_agree_with_general_paths(mode):
                     for leaves in ([values], [values[:32], values[32:]], [values[32:], values[:32]]):
                         doc = {"x": [{"y": leaf} for leaf in leaves]}
                         assert outcome(query, doc) == outcome(general(query), general(doc)), (length, operands, values)
+
+
+class ShiftedIterList(list):
+    """Iterates as each stored item + 1."""
+
+    def __iter__(self):
+        return (item + 1 for item in list.__iter__(self))
+
+
+def test_list_operand_subclasses_are_iterated_once_into_a_plain_list():
+    # The query snapshot iterates the operands once; matching uses that plain list.
+    assert Query({"x": {"$in": ShiftedIterList([1])}}).test({"x": 2})
+    assert not Query({"x": {"$in": ShiftedIterList([1])}}).test({"x": 3})
+    assert not Query({"x": {"$nin": ShiftedIterList([1])}}).test({"x": 2})
+    assert Query({"x": {"$nin": ShiftedIterList([1])}}).test({"x": 3})
+    assert Query({"x": {"$all": ShiftedIterList([1, 2])}}).test({"x": [2, 3]})
+    assert not Query({"x": {"$all": ShiftedIterList([1, 2])}}).test({"x": [3, 4]})
+
+
+@pytest.mark.parametrize("operands", [[i * sys.hash_info.modulus for i in range(1, 4)],
+                                      [1e100, None], [1e100, "a"], [None, -1e100],
+                                      [sys.hash_info.modulus, "a"], ["a", 2.0 ** 61]])
+def test_membership_leaves_large_numbers_unhashed(operands):
+    # One rule for every list: a number at or above the hash modulus in
+    # magnitude keeps the whole list on the pairwise scan. Such ints can share
+    # one hash, which would make building a hash set quadratic.
+    assert prepare_in(operands)[0] is None
+    number = next(value for value in operands if isinstance(value, (int, float)))
+    query = Query({"x": {"$in": operands}})
+    assert query.test({"x": number}) and query.test({"x": int(number)})
+    assert not query.test({"x": int(number) + 1})
+    assert query.test({"x": "a"}) is ("a" in operands)
+    assert query.test({}) is (None in operands)

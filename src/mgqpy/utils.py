@@ -1,7 +1,6 @@
 """Numeric operand validation and canonical array-index spelling."""
 
 from decimal import Decimal
-from functools import lru_cache
 import math
 from numbers import Number
 
@@ -9,7 +8,6 @@ from numbers import Number
 _EXCLUDED_NUMBERS = (bool, complex)
 
 
-@lru_cache(maxsize=128)
 def is_array_index(key: str) -> bool:
     """Only canonical, nonnegative ASCII integers are array indices."""
     return key == "0" or (key.isascii() and key.isdecimal() and key[0] != "0")

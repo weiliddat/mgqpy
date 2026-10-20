@@ -145,3 +145,19 @@ def test_index_first_short_circuits_and_propagates_reached_errors():
     with pytest.raises(RuntimeError) as caught:
         predicate.test({"x": [[[BrokenFields()], [{"a": 1}]]]})
     assert caught.value is error
+
+
+def test_path_subclasses_split_independently_of_equal_strings():
+    class First(str):
+        def split(self, *args):
+            return ["first"]
+
+    class Second(str):
+        def split(self, *args):
+            return ["second"]
+
+    doc = {"first": 1, "second": 2, "p": 3}
+    for _ in range(2):
+        assert Query({"p": 3}).test(doc) is True
+        assert Query({First("p"): 1}).test(doc) is True
+        assert Query({Second("p"): 2}).test(doc) is True

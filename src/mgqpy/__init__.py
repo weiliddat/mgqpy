@@ -27,13 +27,13 @@ from numbers import Number
 import re
 from typing import Any
 
-from .comparison import equal as _equal, _match_gt, _match_gte, _match_lt, _match_lte
-from .operators.all import _SIMPLE, compile_all
+from .comparison import _PLAIN, equal as _equal, prepare_equal, _match_gt, _match_gte, _match_lt, _match_lte
+from .operators.all import compile_all
 from .operators.and_or_nor import conjunction, disjunction, negate
 from .operators.elem_match import _match_elem_match, _match_elem_match_value, _match_elem_match_pair
 from .operators.eq_ne_not import _match_eq
 from .operators.exists import _match_exists
-from .operators.in_nin import _match_in
+from .operators.in_nin import _match_in, prepare_in
 from .operators.mod import _match_mod, _validate_mod
 from .operators.regex import _Regex, _match_regex, _compile_regex
 from .operators.size import _match_size, _validate_size
@@ -46,6 +46,9 @@ query_ops = {
     "$or",
     "$nor",
 }
+
+# Immutable scalars are shared by the snapshot and are never expressions or regexes.
+_SCALARS = frozenset({str, int, float, bool, bytes, complex, type(None)})
 
 
 class InvalidQuery(ValueError):
@@ -88,8 +91,12 @@ def _compile_query(query, location="query"):
                 predicate = conjunction(children) if path == "$and" else disjunction(children)
                 predicates.append(negate(predicate) if path == "$nor" else predicate)
             else:
-                value = _prepare_expression(value, here)
-                predicates.append(_compile_expression(compile_path(path), value))
+                parts = compile_path(path)
+                # Scalar literals, the common case, need no preparation or dispatch.
+                if type(value) in _SCALARS:
+                    predicates.append(_field(parts, _equal, value))
+                else:
+                    predicates.append(_compile_expression(parts, _prepare_expression(value, here)))
         except InvalidQuery:
             raise
         except (TypeError, ValueError, ArithmeticError, RecursionError) as error:
@@ -98,6 +105,8 @@ def _compile_query(query, location="query"):
 
 
 def _field(parts, match, operand, expand_leaf=True):
+    if match is _equal:
+        match = prepare_equal(operand)
     # None binds a raw $elemMatch element, without path lookup or expansion.
     if parts is None:
         def predicate(value):
@@ -114,16 +123,15 @@ _value_ops = {
     "$regex": _match_regex, "$mod": _match_mod, "$all": None,
     "$elemMatch": None, "$size": _match_size, "$exists": _match_exists,
 }
+_op_order = {op: rank for rank, op in enumerate(_value_ops)}
 
 
 def _compile_expression(parts, value):
     if not _is_expression(value):
         return _field(parts, _match_eq if isinstance(value, _Regex) else _equal, value)
     predicates = []
-    for op, match in _value_ops.items():
-        if op not in value:
-            continue
-        operand = value[op]
+    for op in sorted(value, key=_op_order.__getitem__):
+        match, operand = _value_ops[op], value[op]
         if op == "$not":
             predicate = negate(_compile_expression(parts, operand))
         elif op == "$all":
@@ -132,8 +140,8 @@ def _compile_expression(parts, value):
             elif parts is None:
                 # Every requirement tests the same raw $elemMatch element.
                 predicate = conjunction(tuple(_compile_expression(parts, child) for child in operand))
-            elif len(operand) == 1 and type(operand[0]) not in _SIMPLE:
-                # Numbers/strings keep their faster chunked membership path.
+            elif len(operand) == 1 and type(operand[0]) not in _PLAIN:
+                # Plain scalars keep their faster chunked membership path.
                 predicate = _compile_expression(parts, operand[0])
             elif _is_expression(operand[0]):
                 children = tuple(child["$elemMatch"] for child in operand)
@@ -202,18 +210,23 @@ def _prepare_expression(value, location):
         operands = value[op]
         if not isinstance(operands, list):
             raise TypeError(f"{op} operator value must be a list")
-        operands = value[op] = operands.copy()
-        for i, operand in enumerate(operands):
-            if _is_expression(operand):
-                if op != "$all" or set(operand) != {"$elemMatch"}:
-                    raise TypeError(f"{op} does not accept operator expressions here")
-                operands[i] = _prepare_expression(operand, f"{location}.{op}[{i}]")
-            elif isinstance(operand, re.Pattern):
-                operands[i] = _compile_regex(operand)
-        if op == "$all":
-            has_elem_match = any(_is_expression(o) for o in operands)
-            if has_elem_match and not all(_is_expression(o) and set(o) == {"$elemMatch"} for o in operands):
-                raise TypeError("$all cannot mix $elemMatch with literal values")
+        # Exact scalar-only lists, the common case, have nothing to prepare or reject.
+        # The copy turns a list subclass into the plain list of its stored items.
+        if type(operands) is not list or not _SCALARS.issuperset(map(type, operands)):
+            operands = value[op] = operands.copy()
+            for i, operand in enumerate(operands):
+                if _is_expression(operand):
+                    if op != "$all" or set(operand) != {"$elemMatch"}:
+                        raise TypeError(f"{op} does not accept operator expressions here")
+                    operands[i] = _prepare_expression(operand, f"{location}.{op}[{i}]")
+                elif isinstance(operand, re.Pattern):
+                    operands[i] = _compile_regex(operand)
+            if op == "$all":
+                has_elem_match = any(_is_expression(o) for o in operands)
+                if has_elem_match and not all(_is_expression(o) and set(o) == {"$elemMatch"} for o in operands):
+                    raise TypeError("$all cannot mix $elemMatch with literal values")
+        if op != "$all":
+            value[op] = prepare_in(operands)
     if "$mod" in value:
         if not _validate_mod(value["$mod"]):
             raise TypeError("$mod requires two finite int64-convertible numbers and a nonzero truncated divisor")
@@ -228,7 +241,7 @@ def _prepare_expression(value, location):
 
 def _copy_query(value):
     """Copy query containers while checking keys, sharing only immutable scalars."""
-    if type(value) in (str, int, float, bool, bytes, complex, type(None)):
+    if type(value) in _SCALARS or type(value) is re.Pattern:
         return value
     if type(value) is dict:
         result = {}
@@ -238,6 +251,8 @@ def _copy_query(value):
             result[key] = _copy_query(child)
         return result
     if type(value) is list:
+        if _SCALARS.issuperset(map(type, value)):
+            return value.copy()
         return [_copy_query(child) for child in value]
     if type(value) is tuple:
         return tuple(_copy_query(child) for child in value)

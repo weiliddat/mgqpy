@@ -1,10 +1,8 @@
 """Independent requirements over one lazy walk, replaying reached leaf values."""
 
+from ..comparison import _all_plain, all_plain_operands
 from ..path import bind_path
 from .eq_ne_not import _match_eq
-
-
-_SIMPLE = {int, float, str}
 
 
 def _matches(group, match, operand):
@@ -20,7 +18,7 @@ def _matches(group, match, operand):
         # reuse the certified prefix; other values still use shared equality.
         while checked < length:
             chunk = value if length <= 128 else value[checked:checked + 32]
-            if not _SIMPLE.issuperset(map(type, chunk)):
+            if not _all_plain(map(type, chunk)):
                 group[2] = None
                 break
             checked += len(chunk)
@@ -39,7 +37,7 @@ def _matches(group, match, operand):
 def compile_all(parts, operands, match):
     # C-level membership is safe only for these exact scalar pairs. In
     # particular, bools, NaNs and native conversions need shared equality.
-    simple = match is _match_eq and all(type(o) in _SIMPLE and o == o for o in operands)
+    simple = match is _match_eq and all_plain_operands(operands)
 
     def visit(value, state, expand=False):
         current, seen = state

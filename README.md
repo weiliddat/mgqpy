@@ -245,7 +245,9 @@ Invalid conversion leaves the original types, so a scalar type mismatch does
 not match. Strings paired with strings stay strings. This is pairwise conversion,
 not global normalization: two differently formatted strings may each equal a
 native value without equaling each other. Membership therefore checks operands
-in order rather than using a hash set or sorted lookup.
+in order rather than normalizing them into a hash set. Only a list made entirely of
+exact `None`, `int`, `float` and `str` operands, with no NaN and no `int` or `float`
+of magnitude `sys.hash_info.modulus` or more, is looked up by hash, with the same result.
 
 ```python
 from datetime import date
@@ -341,7 +343,7 @@ and close the client. CI tests Python 3.10–3.13 against MongoDB 7 and 8, inclu
 an isolated installed-wheel smoke test.
 
 Correctness tests do not run performance benchmarks. Use `python benchmarks/run.py`
-to compare git refs; see [the baseline](benchmarks/README.md) for commands, cases,
+to compare git refs; see [the benchmarks](benchmarks/README.md) for commands, cases,
 construction/matching/single-use results and historical measurements.
 
 Amp orbs use `.agents/setup` to install the locked Python dependencies and a
