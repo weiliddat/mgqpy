@@ -117,14 +117,16 @@ def prepare_equal(operand):
     """Return a match(value, operand) equivalent to equal() for this operand."""
     if type(operand) is list:
         members = operand
-    elif type(operand) is dict and _all_str(map(type, operand)):
+    elif type(operand) is dict:
         members = operand.values()
     else:
         return equal
     # Small flat plain containers compare in C once the value is certified the same way.
-    if len(members) <= _PLAIN_CONTAINER_LIMIT and all_plain_operands(members):
-        return _equal_plain_list if type(operand) is list else _equal_plain_dict
-    return equal
+    if len(members) > _PLAIN_CONTAINER_LIMIT or not all_plain_operands(members):
+        return equal
+    if members is operand:
+        return _equal_plain_list
+    return _equal_plain_dict if _all_str(map(type, operand)) else equal
 
 
 def _equal_plain_list(value, operand):
