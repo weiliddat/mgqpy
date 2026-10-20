@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.3
+
+Documentation and benchmark tooling only; no runtime changes from 1.0.2.
+
+- The README summarizes how mgqpy compares with other offline MongoDB filter
+  matchers on accuracy and speed, and links to the full
+  [comparison](benchmarks/compare/results/RESULTS.md) and its harness in
+  `benchmarks/compare/`.
+- README links to other repository files are absolute, so they work on PyPI.
+
 ## 1.0.2
 
 ### Performance
