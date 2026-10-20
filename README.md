@@ -246,7 +246,8 @@ not match. Strings paired with strings stay strings. This is pairwise conversion
 not global normalization: two differently formatted strings may each equal a
 native value without equaling each other. Membership therefore checks operands
 in order rather than normalizing them into a hash set. Only a list made entirely of
-exact `None`, `int`, `float` and `str` operands is looked up by hash, with the same result.
+exact `None`, `int`, `float` and `str` operands, with no NaN and no `int` or `float`
+of magnitude `sys.hash_info.modulus` or more, is looked up by hash, with the same result.
 
 ```python
 from datetime import date
