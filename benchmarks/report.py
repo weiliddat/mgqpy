@@ -3,6 +3,7 @@
 import argparse
 import json
 from pathlib import Path
+import re
 
 
 MATCHING = [
@@ -33,12 +34,21 @@ def span(values, ratio=True):
 
 
 def tables(here):
-    data = [json.loads(p.read_text()) for p in sorted((here / "snapshot").glob("*.json"))]
+    data = [json.loads(p.read_text(encoding="utf-8")) for p in (here / "snapshot").glob("*.json")]
+    if not data:
+        raise ValueError("no snapshot JSON files")
+    data.sort(key=lambda d: tuple(map(int, d["python"].split(".")[:2])))
+    if len(data[0]["refs"]) != 3 or any(list(d["refs"].items()) != list(data[0]["refs"].items()) for d in data):
+        raise ValueError("snapshot files must compare the same three refs in the same order")
     first, previous, last = data[0]["refs"]
     old, prev, new = [ref["label"] for ref in data[0]["refs"].values()]
     comparison = f"{new} / {prev}"
     pythons = ["Python " + ".".join(d["python"].split(".")[:2]) for d in data]
+    if len(set(pythons)) != len(pythons):
+        raise ValueError("snapshot must contain one file per Python major.minor version")
     rows = [{r["name"]: r for r in d["results"]} for d in data]
+    if any(set(r) != set(rows[0]) or len(r) != len(d["results"]) for r, d in zip(rows, data)):
+        raise ValueError("snapshot files have missing, extra or duplicate case names")
     result = {}
 
     def table(name, header, body):
@@ -80,10 +90,18 @@ if __name__ == "__main__":
     mode.add_argument("--check", action="store_true", help="exit 1 if generated README tables are stale")
     args = parser.parse_args()
     here = Path(__file__).resolve().parent
-    generated = tables(here)
+    try:
+        generated = tables(here)
+    except (KeyError, ValueError, OSError) as error:
+        parser.error(f"Invalid snapshot: {error}")
     if args.write or args.check:
         readme = here / "README.md"
-        original = updated = readme.read_text()
+        original = updated = readme.read_text(encoding="utf-8")
+        markers = re.findall(r"<!-- (BEGIN|END) generated: (.*?) -->", original)
+        if (sorted(markers[::2]) != sorted(("BEGIN", name) for name in generated)
+                or markers[1::2] != [("END", name) for _, name in markers[::2]]):
+            parser.error("README markers must form exactly one non-nested BEGIN/END pair per table: "
+                         + ", ".join(generated))
         for name, table in generated.items():
             begin, end = f"<!-- BEGIN generated: {name} -->", f"<!-- END generated: {name} -->"
             before, rest = updated.split(begin)
@@ -93,6 +111,6 @@ if __name__ == "__main__":
             if original != updated:
                 parser.exit(1, "Snapshot tables differ; run python benchmarks/report.py --write and review the diff.\n")
         else:
-            readme.write_text(updated)
+            readme.write_text(updated, encoding="utf-8")
     else:
         print("\n\n".join(generated.values()))
