@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import statistics
 import subprocess
@@ -205,3 +206,97 @@ class Query:
     ], cwd=root, capture_output=True, text=True)
     assert result.returncode != 0
     assert not output.exists()
+
+
+@pytest.fixture
+def report_directory(tmp_path):
+    source = Path(__file__).parent
+    for name in ("report.py", "README.md"):
+        shutil.copyfile(source / name, tmp_path / name)
+    shutil.copytree(source / "snapshot", tmp_path / "snapshot")
+    return tmp_path
+
+
+@pytest.mark.parametrize("ratio,listed", [(1.03, False), (1.03001, True)])
+def test_report_cli_prints_checks_and_updates_only_generated_tables(report_directory, ratio, listed):
+    tmp_path = report_directory
+    readme = tmp_path / "README.md"
+    original = readme.read_text(encoding="utf-8")
+
+    def run(*args):
+        # Make locale-dependent file I/O fail even on a UTF-8 development machine.
+        return subprocess.run([sys.executable, "-X", "warn_default_encoding", "-W",
+                               "error::EncodingWarning", str(tmp_path / "report.py"), *args],
+                              cwd=tmp_path, capture_output=True, text=True, encoding="utf-8")
+
+    assert run("--check").returncode == 0
+    # Alter saved paired ratios, not absolute medians: dividing medians must fail.
+    for path, construction in zip(sorted((tmp_path / "snapshot").glob("*.json")),
+                                  (0.1234, 0.9004, 1.2004, 0.5554)):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        flat = next(row for row in data["results"] if row["name"] == "flat")
+        flat["timings"]["construct"]["paired_ratio_to_previous"] = construction
+        flat["timings"]["match"]["paired_ratio_to_previous"] = ratio
+        path.write_text(json.dumps(data), encoding="utf-8")
+    printed = run()
+    assert printed.returncode == 0
+    assert printed.stdout.startswith("| CPython |")
+    assert re.search(r"\| Flat equality \|[^\n]*\| 0.123–1.200× \|", printed.stdout)
+    # Selection uses unrounded ratios, even when a selected ratio prints as 1.030×.
+    assert ("| `flat` / match |" in printed.stdout) is listed
+    stale = run("--check")
+    assert stale.returncode == 1 and "differ" in stale.stderr
+    assert readme.read_text(encoding="utf-8") == original
+    assert run("--write").returncode == 0
+    updated = readme.read_text(encoding="utf-8")
+    pattern = r"(?s)(<!-- BEGIN generated: .*? -->).*?(<!-- END generated: .*? -->)"
+    assert re.sub(pattern, r"\1\2", updated) == re.sub(pattern, r"\1\2", original)
+    assert ("| `flat` / match |" in updated) is listed
+    assert run("--check").returncode == 0
+    assert run("--write").returncode == 0
+    assert readme.read_text(encoding="utf-8") == updated
+
+
+@pytest.mark.parametrize("damage", ["missing", "duplicate", "mismatched", "nested"])
+def test_report_cli_rejects_bad_markers_without_writing(report_directory, damage):
+    readme = report_directory / "README.md"
+    text = readme.read_text(encoding="utf-8")
+    begin, end = "<!-- BEGIN generated: controls -->", "<!-- END generated: controls -->"
+    if damage == "nested":
+        text = text.replace(begin, begin + "\n<!-- BEGIN generated: extra -->")
+        text = text.replace(end, "<!-- END generated: extra -->\n" + end)
+    else:
+        replacement = {"missing": "", "duplicate": end + end,
+                       "mismatched": "<!-- END generated: matching -->"}[damage]
+        text = text.replace(end, replacement)
+    readme.write_text(text, encoding="utf-8")
+    original = readme.read_bytes()
+    result = subprocess.run([sys.executable, str(report_directory / "report.py"), "--write"],
+                            capture_output=True, text=True)
+    assert result.returncode == 2 and "markers" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert readme.read_bytes() == original
+
+
+@pytest.mark.parametrize("damage", ["missing-first", "missing-other", "duplicate-case", "refs", "python"])
+def test_report_cli_rejects_inconsistent_snapshots(report_directory, damage):
+    paths = sorted((report_directory / "snapshot").glob("*.json"))
+    path = paths[0] if damage == "missing-first" else paths[1]
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if damage.startswith("missing"):
+        data["results"] = [row for row in data["results"] if row["name"] != "deep"]
+    elif damage == "duplicate-case":
+        data["results"].append(data["results"][0])
+    elif damage == "refs":
+        data["refs"]["1"]["label"] = "another-release"
+    else:
+        data["python"] = json.loads(paths[0].read_text(encoding="utf-8"))["python"]
+    path.write_text(json.dumps(data), encoding="utf-8")
+    readme = report_directory / "README.md"
+    original = readme.read_bytes()
+    for mode in ([], ["--write"]):
+        result = subprocess.run([sys.executable, str(report_directory / "report.py"), *mode],
+                                capture_output=True, text=True)
+        assert result.returncode == 2 and "snapshot" in result.stderr
+        assert "Traceback" not in result.stderr and not result.stdout
+        assert readme.read_bytes() == original
