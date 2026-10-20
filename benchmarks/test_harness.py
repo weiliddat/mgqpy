@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import statistics
 import subprocess
@@ -205,3 +206,44 @@ class Query:
     ], cwd=root, capture_output=True, text=True)
     assert result.returncode != 0
     assert not output.exists()
+
+
+@pytest.mark.parametrize("ratio,listed", [(1.03, False), (1.03001, True)])
+def test_report_cli_prints_checks_and_updates_only_generated_tables(tmp_path, ratio, listed):
+    source = Path(__file__).parent
+    for name in ("report.py", "README.md"):
+        shutil.copyfile(source / name, tmp_path / name)
+    shutil.copytree(source / "snapshot", tmp_path / "snapshot")
+    readme = tmp_path / "README.md"
+    original = readme.read_text()
+
+    def run(*args):
+        return subprocess.run([sys.executable, str(tmp_path / "report.py"), *args],
+                              cwd=tmp_path, capture_output=True, text=True)
+
+    assert run("--check").returncode == 0
+    # Alter saved paired ratios, not absolute medians: dividing medians must fail.
+    for path, construction in zip(sorted((tmp_path / "snapshot").glob("*.json")),
+                                  (0.1234, 0.9004, 1.2004, 0.5554)):
+        data = json.loads(path.read_text())
+        flat = next(row for row in data["results"] if row["name"] == "flat")
+        flat["timings"]["construct"]["paired_ratio_to_previous"] = construction
+        flat["timings"]["match"]["paired_ratio_to_previous"] = ratio
+        path.write_text(json.dumps(data))
+    printed = run()
+    assert printed.returncode == 0
+    assert printed.stdout.startswith("| CPython |")
+    assert re.search(r"\| Flat equality \|[^\n]*\| 0.123–1.200× \|", printed.stdout)
+    # Selection uses unrounded ratios, even when a selected ratio prints as 1.030×.
+    assert ("| `flat` / match |" in printed.stdout) is listed
+    stale = run("--check")
+    assert stale.returncode == 1 and "differ" in stale.stderr
+    assert readme.read_text() == original
+    assert run("--write").returncode == 0
+    updated = readme.read_text()
+    pattern = r"(?s)(<!-- BEGIN generated: .*? -->).*?(<!-- END generated: .*? -->)"
+    assert re.sub(pattern, r"\1\2", updated) == re.sub(pattern, r"\1\2", original)
+    assert ("| `flat` / match |" in updated) is listed
+    assert run("--check").returncode == 0
+    assert run("--write").returncode == 0
+    assert readme.read_text() == updated

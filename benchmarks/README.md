@@ -148,12 +148,14 @@ Amp orb (Intel Xeon @ 2.60 GHz, 8 logical CPUs). Interpreters ran serially, pinn
 logical CPU 0 with `--cpu 0` (Linux only), with the defaults: two processes × 12 blocks, all operations. Every case
 returned its expected boolean in 1.0.1 and 1.0.2, and all four runs exit 0.
 
+<!-- BEGIN generated: controls -->
 | CPython | Eligible against 0.9.0, of 311 | Identical-source matching | Construction | Single use |
 | --- | ---: | ---: | ---: | ---: |
 | 3.10.20 | 253 | 0.807–1.120× | 0.986–1.045× | 0.848–1.152× |
 | 3.11.6 | 259 | 0.764–1.077× | 0.976–1.029× | 0.902–1.102× |
 | 3.12.13 | 259 | 0.896–1.159× | 0.980–1.016× | 0.903–1.094× |
 | 3.13.13 | 259 | 0.702–1.190× | 0.977–1.021× | 0.864–1.232× |
+<!-- END generated: controls -->
 
 The 58 cases flagged on 3.10 and 52 on 3.11+ are 0.9.0 rejections, exceptions and
 wrong answers; 3.10 adds 0.9.0's explicit-regex failures. Ratios below are medians of
@@ -161,6 +163,7 @@ paired block ratios, lower is faster. Across the 311 cases, the median 1.0.2 / 1
 ratio is 0.986–0.996× for matching, 0.780–0.822× for construction and 0.818–0.856× for
 single use, depending on the Python.
 
+<!-- BEGIN generated: matching -->
 | Matching, 1.0.2 / 1.0.1 | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | 1.0.1 / 0.9.0 | 1.0.2 / 0.9.0 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Numeric-index miss | 0.238× | 0.306× | 0.272× | 0.291× | 7.308–8.950× | 2.008–2.581× |
@@ -172,6 +175,7 @@ single use, depending on the Python.
 | Singleton array `$all`, last hit | 0.432× | 0.420× | 0.434× | 0.383× | 11.424–16.364× | 4.778–6.300× |
 | Singleton document `$all`, last hit | 0.998× | 0.995× | 0.998× | 0.997× | 14.401–17.570× | 14.167–17.288× |
 | Ordered-document equality, last hit | 0.990× | 0.971× | 1.001× | 0.996× | 1.275–1.488× | 1.250–1.487× |
+<!-- END generated: matching -->
 
 Nested-document equality and singleton document `$all` compare their members
 recursively, as in 1.0.1, so they are unchanged and remain much slower than 0.9.0.
@@ -180,6 +184,7 @@ Construction and single use, ranges across the four Pythons. 0.9.0's constructor
 stores a reference; 1.x copies, validates and compiles the query, so construction has
 no 0.9.0 ratio.
 
+<!-- BEGIN generated: construction -->
 | Construction | 0.9.0 (µs) | 1.0.1 (µs) | 1.0.2 (µs) | 1.0.2 / 1.0.1 |
 | --- | ---: | ---: | ---: | ---: |
 | Flat equality | 0.108–0.194 | 2.146–3.401 | 1.432–2.349 | 0.665–0.692× |
@@ -189,7 +194,9 @@ no 0.9.0 ratio.
 | `$in` of 10,000 | 0.258–0.346 | 2,028–3,199 | 883–1,171 | 0.276–0.515× |
 | Compiled regex | 0.104–0.200 | 10.584–16.540 | 2.641–4.354 | 0.249–0.283× |
 | `$regex` string | 0.103–0.203 | 5.022–7.774 | 3.961–6.329 | 0.788–0.828× |
+<!-- END generated: construction -->
 
+<!-- BEGIN generated: single-use -->
 | Single use | 0.9.0 (µs) | 1.0.1 (µs) | 1.0.2 (µs) | 1.0.2 / 1.0.1 | 1.0.2 / 0.9.0 |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Flat equality | 1.298–2.337 | 2.553–4.183 | 1.848–3.089 | 0.722–0.742× | 1.322–1.473× |
@@ -197,6 +204,7 @@ no 0.9.0 ratio.
 | `$in`, last of 1,000 | 630–1,068 | 344–558 | 96.361–122 | 0.172–0.313× | 0.090–0.163× |
 | Singleton array `$all`, last hit | 3.764–5.836 | 58.791–89.723 | 28.852–44.696 | 0.439–0.495× | 5.928–7.622× |
 | Singleton document `$all`, last hit | 6.458–9.001 | 109–157 | 108–158 | 0.989–0.999× | 14.786–18.449× |
+<!-- END generated: single-use -->
 
 Absolute ranges and ratio ranges are calculated independently.
 
@@ -207,7 +215,55 @@ first member differs match at 0.977–1.006× after the recheck below.
 
 ### Remaining cases slower than 1.0.1
 
-Every observation above 1.03× 1.0.2 / 1.0.1 in the snapshot (34 case/operation pairs
+The generated table lists every case/operation pair with a snapshot ratio above
+1.03× on at least one Python, before rechecking. Ratios are 1.0.2 / 1.0.1; these
+observations are not all confirmed regressions.
+
+<!-- BEGIN generated: slower -->
+| Case / operation | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 |
+| --- | ---: | ---: | ---: | ---: |
+| `all-elem-match-document` / match | 0.979× | 0.989× | 1.055× | 0.993× |
+| `and-or` / match | 0.985× | 1.021× | 1.031× | 1.003× |
+| `date-scan-early` / match | 1.035× | 1.078× | 1.019× | 1.027× |
+| `document-scan-early` / construct | 1.100× | 1.018× | 1.038× | 1.052× |
+| `document-scan-early` / single-use | 1.076× | 0.975× | 0.983× | 0.951× |
+| `document-scan-last` / construct | 1.100× | 1.022× | 1.043× | 1.055× |
+| `document-scan-miss` / construct | 1.099× | 1.010× | 1.052× | 1.046× |
+| `empty-all` / match | 1.032× | 1.025× | 1.010× | 1.032× |
+| `gt-int-float-array-miss` / match | 1.075× | 1.027× | 0.999× | 0.984× |
+| `lt-int-float-array-miss` / match | 1.016× | 1.038× | 0.998× | 1.007× |
+| `mod-decimal-early` / match | 0.973× | 1.051× | 1.011× | 0.980× |
+| `mod-float-early` / match | 0.967× | 1.068× | 1.042× | 0.990× |
+| `mod-scan-early` / match | 1.054× | 1.095× | 1.033× | 1.039× |
+| `numeric-miss` / match | 1.031× | 1.007× | 0.985× | 0.979× |
+| `ordered-key-mismatch` / match | 1.223× | 1.112× | 1.187× | 1.130× |
+| `ordered-key-mismatch` / construct | 1.102× | 1.030× | 1.047× | 1.066× |
+| `ordered-key-mismatch` / single-use | 1.107× | 1.061× | 1.086× | 1.069× |
+| `path-eq-0` / match | 0.973× | 1.052× | 1.019× | 0.996× |
+| `review-flat-dict-16-first-mismatch` / match | 1.192× | 1.378× | 1.363× | 1.307× |
+| `review-flat-dict-16-first-mismatch` / construct | 1.033× | 1.036× | 1.052× | 1.079× |
+| `review-flat-dict-16-first-mismatch` / single-use | 1.041× | 1.090× | 1.100× | 1.109× |
+| `review-in-1-0` / construct | 1.024× | 0.982× | 1.033× | 0.934× |
+| `review-in-1-1` / construct | 1.032× | 0.992× | 1.036× | 0.956× |
+| `review-subclass-key-eq` / match | 1.267× | 1.222× | 1.232× | 1.202× |
+| `review-subclass-key-eq` / single-use | 1.078× | 1.015× | 1.007× | 1.001× |
+| `review-subclass-key-ne` / match | 1.273× | 1.275× | 1.231× | 1.211× |
+| `review-subclass-key-ne` / single-use | 1.097× | 1.006× | 1.023× | 0.996× |
+| `review-wide-dict-empty-100` / construct | 1.086× | 0.998× | 1.022× | 1.037× |
+| `review-wide-dict-empty-100` / single-use | 1.032× | 0.971× | 0.980× | 0.977× |
+| `review-wide-dict-empty-1000` / construct | 1.090× | 0.991× | 1.030× | 1.046× |
+| `review-wide-dict-empty-10000` / construct | 1.087× | 1.000× | 1.020× | 1.040× |
+| `review-wide-list-first-mismatch-1000` / match | 1.105× | 1.095× | 1.075× | 1.001× |
+| `review-wide-list-first-mismatch-10000` / match | 1.147× | 1.173× | 1.123× | 1.173× |
+| `uuid-scan-early` / match | 1.033× | 1.039× | 1.023× | 0.990× |
+| `value-array-0` / match | 1.091× | 1.058× | 1.166× | 1.055× |
+<!-- END generated: slower -->
+
+**Count discrepancy:** the committed snapshot contains 35 such pairs over 27
+cases, but the original recheck notes recorded 34. The raw recheck files were not
+retained, so their coverage cannot be reconciled from the snapshot alone.
+
+The original notes say every observation above 1.03× 1.0.2 / 1.0.1 in the snapshot (34 case/operation pairs
 over 27 cases) was rechecked on all four Pythons with 1.0.1 and 1.0.2 only: six processes × 16
 blocks × 10 ms, the four Pythons at once on logical CPUs 0, 2, 4 and 6. The rechecks were
 run but are not stored. Their identical-source controls were 0.988–1.031× for matching,
@@ -320,6 +376,15 @@ and keep existing cases stable. When the snapshot is replaced, update the
 changes, noise and a summary of the rechecks, and move the superseded tables to
 [HISTORY.md](HISTORY.md). Prefer comparing refs in a fresh run over dividing
 absolute times from different machines. There is no performance workflow or CI gate.
+
+After replacing the snapshot, run `python benchmarks/report.py` to print the five
+snapshot-derived tables, or `python benchmarks/report.py --write` to replace only
+the contents of their `generated:` markers in this README. Use
+`python benchmarks/report.py --check` to fail if those tables are stale. The helper
+reads the JSON (including the saved paired ratios), not ratios of absolute medians.
+It preserves the existing rounding: three decimals for ratios and times below
+100 µs, whole µs otherwise. Prose, the claim-to-case inventory and the recheck
+table remain handwritten; their evidence is not all stored in the snapshot.
 
 Removed/replaced:
 
