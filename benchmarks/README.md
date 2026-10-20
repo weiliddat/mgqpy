@@ -220,19 +220,22 @@ in `recheck-python-*`, and the five that run missed in `recheck-2-python-*`. The
 remain slower in the recheck,
 whose controls were 0.986–1.014×:
 
-| Case | Operation | Recheck 1.0.2 / 1.0.1 | Cause |
-| --- | --- | ---: | --- |
-| `ordered-key-mismatch` | match | 1.124–1.231× | exact-`str` key check (fix 2) |
-| `ordered-key-mismatch` | single use | 1.044–1.110× | same |
-| `review-subclass-key-{eq,ne}` | match | 1.187–1.309× | failed key check before `equal()` (fix 2) |
-| `review-subclass-key-{eq,ne}` | single use (3.10 only) | 1.088× | same |
-| `document-scan-*`, `ordered-key-mismatch` | construct (3.10, 3.12, 3.13) | 1.039–1.090× | operand key check at preparation (fix 2) |
-| `review-wide-dict-empty-*` | construct (3.10, 3.12, 3.13) | 1.029–1.080× | same, for the empty dict operand |
-| `review-in-1-{0,1}` | construct (3.12 only) | 1.038–1.039× | collision guard (fix 3) |
-| `date-scan-early` | match (3.10 only) | 1.032× | unconverted-type check before date conversion |
-| `all-singleton-document-0`, `value-native-document-0`, `document-scan-early` | single use (3.10 only) | 1.023–1.039× | construction cost above |
+| Case | Operation | Recheck 1.0.2 / 1.0.1 | Extra time per call | Cause |
+| --- | --- | ---: | ---: | --- |
+| `ordered-key-mismatch` | match | 1.124–1.231× | 0.12–0.29 µs | exact-`str` key check (fix 2) |
+| `ordered-key-mismatch` | single use | 1.044–1.110× | 0.18–0.68 µs | same |
+| `review-subclass-key-{eq,ne}` | match | 1.187–1.309× | 0.18–0.39 µs | failed key check before `equal()` (fix 2) |
+| `review-subclass-key-{eq,ne}` | single use (3.10 only) | 1.088× | 0.71–0.75 µs | same |
+| `document-scan-*`, `ordered-key-mismatch` | construct (3.10, 3.12, 3.13) | 1.039–1.090× | 0.12–0.40 µs | operand key check at preparation (fix 2) |
+| `review-wide-dict-empty-*` | construct (3.10, 3.12, 3.13) | 1.029–1.080× | 0.07–0.32 µs | same, for the empty dict operand |
+| `review-in-1-{0,1}` | construct (3.12 only) | 1.038–1.039× | 0.17–0.18 µs | collision guard (fix 3) |
+| `date-scan-early` | match (3.10 only) | 1.032× | 0.04 µs | unconverted-type check before date conversion |
+| `all-singleton-document-0`, `value-native-document-0`, `document-scan-early` | single use (3.10 only) | 1.023–1.039× | 0.20–0.48 µs | construction cost above |
 
-These are absolute costs of 0.1–0.4 µs. Initially flagged and cleared on recheck:
+Per call, that is up to 0.39 µs when matching, 0.40 µs when constructing and
+0.75 µs for single use (construction plus one match), largest on 3.10.
+
+Initially flagged and cleared on recheck:
 `review-wide-list-first-mismatch-1000`/`-10000` (0.999–1.010×), `value-array-0`,
 `elem-match-value-all-99`, `mod-scan-early`, `mod-float-early`, `all`,
 `all-singleton`, `lt-*-array-miss`, `path-eq-0` and `construct-and-100`, and in

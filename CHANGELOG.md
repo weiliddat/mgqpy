@@ -15,8 +15,10 @@
   conversion.
 - `Query()` construction caches compiled exact-`str` field paths, precomputes regex flags,
   shares scalar-only lists and skips their per-operand preparation.
-- Results match 1.0.1. A few small cases remain up to about 1.3× (0.1–0.4 µs)
-  slower, mainly dict equality with keys in a different order; see
+- Results match 1.0.1. A few small cases remain slower, mainly dict equality
+  where the keys are in a different order or are `str` subclasses: up to about
+  1.3× and 0.4 µs per call when matching, 1.1× and 0.4 µs when constructing, and
+  1.1× and 0.75 µs for single use; see
   [1.0.2 versus 1.0.1](benchmarks/README.md#102-versus-101).
 
 ## 1.0.1
