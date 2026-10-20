@@ -41,6 +41,8 @@ def main():
     parser.add_argument("--warmups", type=int, default=100)
     parser.add_argument("--cpu", type=int)
     args = parser.parse_args()
+    # Node runs with cwd js/, so pass it absolute paths.
+    args.output = args.output.resolve()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     started = datetime.now(timezone.utc).isoformat()
     truth = server_truth(args.ports, args.cases)

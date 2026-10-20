@@ -113,10 +113,19 @@ Without this rule, a library could count a miss that is right for the wrong
 reason: mongita treats `$or` as a field name, so every `$or` query misses.
 The JSON keeps both counts.
 
-Cases that MongoDB cannot answer are excluded for all libraries. These include
-Python `date`, `Decimal` and `UUID` values, and integers outside int64; mgqpy
-handles these with its own extensions. Wrong answers and exceptions are never
-timed.
+Because ratios are against mgqpy, a case is timed only where the servers return
+the case's expected boolean, which is mgqpy's answer; the Node appendix uses the
+same rule. This excludes 35 cases whose Python values cannot be encoded as BSON
+(`date`, `Decimal`, `UUID`, integers outside int64, `complex`), and
+`regex-unicode-class`: a valid query (`^\w+$` on `"äpfel"`) where MongoDB 7 and 8
+return false, mgqpy returns true and sift and mingo return false. That mgqpy
+difference is counted as an mgqpy miss in the compatibility tables. Wrong answers
+and exceptions are never timed.
+
+This is a survey of one corpus and one set of workloads, mostly mgqpy's own
+development fixtures plus independent MongoDB manual examples, not a general
+ranking. The saved results were measured on the mgqpy 1.0.2 runtime, which 1.0.3
+does not change.
 
 Operations:
 

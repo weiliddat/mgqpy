@@ -348,8 +348,13 @@ Details, method and caveats are in the
 - tinymongo matches MongoDB more often on both independent query sets. Most of
   mgqpy's misses are `$type`, which it does not support; `$comment` is also
   rejected, and `\w`-style regex classes match Unicode letters, unlike MongoDB.
-- mgqpy compiles the whole query up front, so a query used once is slower than in
-  libraries that interpret the filter directly. Reuse `Query` objects.
+- Single use (construct and match once) depends on the workload: mgqpy compiles
+  the whole query up front, and mongoquery and mongita are faster than mgqpy in
+  most single-use cases; mongomock's median is 0.94× mgqpy on 3.11 and 1.06× on
+  3.13. Reuse `Query` objects for repeated matching.
+- This is a survey of one corpus and one set of workloads, mostly mgqpy's own
+  development fixtures plus independent MongoDB manual examples, not a general
+  ranking. Measured on the 1.0.2 runtime, which 1.0.3 does not change.
 - On the full corpus mgqpy agrees on 5,532 of 5,596 queries, but most of those
   queries come from the test set it was developed against, so that number is not
   an independent measure.
