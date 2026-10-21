@@ -36,8 +36,8 @@ matches = [doc for doc in documents if predicate.test(doc)]
 ```
 
 `InvalidQuery` is a `ValueError` subclass. Invalid or unsupported queries no
-longer silently return `False`, even in unused logical branches. `$type` remains
-unsupported. Both document-form and value-form `$elemMatch` now work.
+longer silently return `False`, even in unused logical branches. `$type` was
+unsupported through 1.0.3 and is supported after it. Both document-form and value-form `$elemMatch` now work.
 
 ## Evaluation errors are not non-matches
 

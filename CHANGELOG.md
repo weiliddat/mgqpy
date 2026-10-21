@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Support `$type` with type names, numeric codes, `"number"` and lists, including
+  under `$not`, `$elemMatch` and logical operators. Values are typed by their native
+  Python class, following PyMongo's encoding of plain Python values and the types
+  equality already uses; driver-specific BSON classes such as `Int64` and `Code`
+  get no special handling and fall back to their Python base type. See the README.
+  Queries that use `$type` previously raised `InvalidQuery`.
+
 ## 1.0.3
 
 Documentation and benchmark tooling only; no runtime changes from 1.0.2.

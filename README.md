@@ -68,8 +68,9 @@ except InvalidQuery as error:
 - `Query(query)` copies and validates the entire query up front. Invalid or
   unsupported queries raise `InvalidQuery` (a `ValueError` subclass), even in
   branches evaluation might skip. There is no separate `validate()` method.
-  Unsupported operators include `$type`. Both document-form and value-form
-  `$elemMatch` are supported.
+  Operators outside the [supported list](#supported-operators), such as `$expr`
+  and `$comment`, are rejected. Both document-form and value-form `$elemMatch`
+  are supported.
 - `test(document)` returns `True` or `False` for a valid query if evaluation succeeds.
   Documents must be dicts; other inputs raise `TypeError`.
 - Operators stop once the result is decided: array matching stops at a match,
@@ -292,6 +293,21 @@ operands; invalid query operands raise `InvalidQuery`. Booleans, non-finite valu
 and out-of-range document numbers do not match.
 `$size` requires a finite integral number in `0..2147483647` (including `2.0`).
 
+`$type` accepts MongoDB's type names, numeric codes, `"number"`, and lists of
+these; invalid names and codes raise `InvalidQuery`. A value is typed by its
+native Python class, following how PyMongo encodes plain Python values: `int` is
+`"int"` within 32 bits, `"long"` within 64 bits, and has no type beyond that;
+`bool` is `"bool"`, not a number. Driver-specific BSON classes get no special
+handling: a subclass falls back to its Python base type, so `bson.Int64(1)` is
+`"int"` (MongoDB: `"long"`) and `bson.Code` is `"string"` (MongoDB:
+`"javascript"`). Native values use the same types as equality and ranges:
+`Decimal` is `"decimal"`, `bytes`, `bytearray` and `UUID` are `"binData"`, and
+`date` and `datetime` are `"date"`. Driver-only type names such as `"objectId"`
+and `"timestamp"` are accepted but never match, even for `bson.ObjectId` values;
+strings are always `"string"`, never inferred from their content. Tuples, `Fraction` and
+other values outside these types match no type. Like MongoDB, a missing field
+has no type, and an array matches both `"array"` and its elements' types.
+
 ## Supported operators
 
 Comparison query operators
@@ -317,6 +333,7 @@ Logical query operators
 Element query operators
 
 - [x] \$exists
+- [x] \$type
 
 Evaluation query operators
 
@@ -345,9 +362,9 @@ Details, method and caveats are in the
 | Matching time, median vs mgqpy | 1× | mongita 2.0× (few operators), mongomock 7.0×, tinymongo 14.8× |
 | Construct + match once, median vs mgqpy | 1× | mongita 0.30×, mongoquery 0.76×, mongomock 0.94× (1.06× on 3.13) |
 
-- tinymongo matches MongoDB more often on both independent query sets. Most of
-  mgqpy's misses are `$type`, which it does not support; `$comment` is also
-  rejected, and `\w`-style regex classes match Unicode letters, unlike MongoDB.
+- These results predate mgqpy's `$type` support, which accounted for most of
+  its misses; they have not been rerun since. `$comment` is still rejected, and
+  `\w`-style regex classes match Unicode letters, unlike MongoDB.
 - Single use (construct and match once) depends on the workload: mgqpy compiles
   the whole query up front, and mongoquery and mongita are faster than mgqpy in
   most single-use cases; mongomock's median is 0.94× mgqpy on 3.11 and 1.06× on

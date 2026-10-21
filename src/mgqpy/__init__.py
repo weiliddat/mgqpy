@@ -21,25 +21,38 @@
 #
 # Doc refers to the object that is passed to the compiled filter function
 
-from copy import deepcopy
 import math
-from numbers import Number
 import re
+from copy import deepcopy
+from numbers import Number
 from typing import Any
 
-from .comparison import _PLAIN, equal as _equal, prepare_equal, _match_gt, _match_gte, _match_lt, _match_lte
+from .comparison import (
+    _PLAIN,
+    _match_gt,
+    _match_gte,
+    _match_lt,
+    _match_lte,
+    prepare_equal,
+)
+from .comparison import equal as _equal
 from .operators.all import compile_all
 from .operators.and_or_nor import conjunction, disjunction, negate
-from .operators.elem_match import _match_elem_match, _match_elem_match_value, _match_elem_match_pair
+from .operators.elem_match import (
+    _match_elem_match,
+    _match_elem_match_pair,
+    _match_elem_match_value,
+)
 from .operators.eq_ne_not import _match_eq
 from .operators.exists import _match_exists
 from .operators.in_nin import _match_in, prepare_in
 from .operators.mod import _match_mod, _validate_mod
-from .operators.regex import _Regex, _match_regex, _compile_regex
+from .operators.regex import _compile_regex, _match_regex, _Regex
 from .operators.size import _match_size, _validate_size
+from .operators.type import _compile_type, _match_type
 from .path import bind_path, compile_path
 
-__all__ = ("Query", "InvalidQuery")
+__all__ = ("InvalidQuery", "Query")
 
 query_ops = {
     "$and",
@@ -121,7 +134,7 @@ _value_ops = {
     "$gt": _match_gt, "$gte": _match_gte, "$lt": _match_lt, "$lte": _match_lte,
     "$in": _match_in, "$nin": _match_in, "$not": None,
     "$regex": _match_regex, "$mod": _match_mod, "$all": None,
-    "$elemMatch": None, "$size": _match_size, "$exists": _match_exists,
+    "$elemMatch": None, "$size": _match_size, "$type": _match_type, "$exists": _match_exists,
 }
 _op_order = {op: rank for rank, op in enumerate(_value_ops)}
 
@@ -236,6 +249,8 @@ def _prepare_expression(value, location):
         if not _validate_size(value["$size"]):
             raise TypeError("$size requires a nonnegative int32")
         value["$size"] = int(value["$size"])
+    if "$type" in value:
+        value["$type"] = _compile_type(value["$type"])
     return value
 
 
