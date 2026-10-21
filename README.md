@@ -294,14 +294,17 @@ and out-of-range document numbers do not match.
 `$size` requires a finite integral number in `0..2147483647` (including `2.0`).
 
 `$type` accepts MongoDB's type names, numeric codes, `"number"`, and lists of
-these; invalid names and codes raise `InvalidQuery`. A value's type is the BSON
-type PyMongo would encode it as: `int` is `"int"` within 32 bits, `"long"` within
-64 bits, and has no type beyond that; `bool` is `"bool"`, not a number. Native
-values use the same types as equality and ranges: `Decimal` is `"decimal"`,
-`bytes`, `bytearray` and `UUID` are `"binData"`, and `date` and `datetime` are
-`"date"`. Driver-only types such as `"objectId"` and `"timestamp"` are accepted
-but never match, because plain Python documents cannot contain them; strings are
-always `"string"`, never inferred from their content. Tuples, `Fraction` and
+these; invalid names and codes raise `InvalidQuery`. A value is typed by its
+native Python class, following how PyMongo encodes plain Python values: `int` is
+`"int"` within 32 bits, `"long"` within 64 bits, and has no type beyond that;
+`bool` is `"bool"`, not a number. Driver-specific BSON classes get no special
+handling: a subclass falls back to its Python base type, so `bson.Int64(1)` is
+`"int"` (MongoDB: `"long"`) and `bson.Code` is `"string"` (MongoDB:
+`"javascript"`). Native values use the same types as equality and ranges:
+`Decimal` is `"decimal"`, `bytes`, `bytearray` and `UUID` are `"binData"`, and
+`date` and `datetime` are `"date"`. Driver-only type names such as `"objectId"`
+and `"timestamp"` are accepted but never match, even for `bson.ObjectId` values;
+strings are always `"string"`, never inferred from their content. Tuples, `Fraction` and
 other values outside these types match no type. Like MongoDB, a missing field
 has no type, and an array matches both `"array"` and its elements' types.
 

@@ -19,6 +19,9 @@ DOCUMENTS = [
     {"x": True}, {"x": datetime.datetime(2024, 1, 1)}, {"x": re.compile("a")},
     {"x": b"ab"}, {"x": [None]}, {"x": -2**31 - 1}, {"x": 2**63 - 1},
 ]
+SHAPED = [{"x": "507f1f77bcf86cd799439011"}, {"x": "12345678-1234-5678-1234-567812345678"},
+          {"x": "12345678123456781234567812345678"}, {"x": "2024-08-01"},
+          {"x": "2024-08-01T00:00:00+00:00"}]
 NESTED = [{"x": [{}, {"a": None}]}, {"x": [{}]}, {"x": [{"a": [1]}]}, {"x": {"a": 1}}]
 
 
@@ -48,6 +51,24 @@ NESTED = [{"x": [{}, {"a": None}]}, {"x": [{}]}, {"x": [{"a": [1]}]}, {"x": {"a"
     ({"x.a": {"$type": "null"}}, NESTED, [0]),
     ({"x.a": {"$type": "array"}}, NESTED, [2]),
     ({"x.a": {"$type": "int"}}, NESTED, [2, 3]),
+    # Strings are never typed by their content.
+    *[({"x": {"$type": alias}}, SHAPED, hits) for alias, hits in (
+        ("string", [0, 1, 2, 3, 4]), ("objectId", []), ("binData", []), ("date", []),
+        ("timestamp", []))],
+    # Document-form $elemMatch, with nested logical operators and $not.
+    ({"x": {"$elemMatch": {"$and": [
+        {"a": {"$type": "int"}},
+        {"$or": [{"b": {"$type": "string"}}, {"b": {"$not": {"$type": "number"}}}]},
+    ]}}}, [{"x": [{"a": 1, "b": "s"}]}, {"x": [{"a": 1, "b": None}]}, {"x": [{"a": 1, "b": 2}]},
+           {"x": [{"a": 1}, {"b": "s"}]}, {"x": [{"a": "1", "b": "s"}]},
+           {"x": [{"a": [1], "b": "s"}]}], [0, 1, 3, 5]),
+    # Value-form $elemMatch under $or and $and, with $not.
+    ({"$or": [{"x": {"$elemMatch": {"$not": {"$type": "number"}}}},
+              {"y": {"$elemMatch": {"$type": "string"}}}]},
+     [{"x": [1, 2]}, {"x": [1, "a"]}, {"x": [1], "y": ["s"]}, {"x": [], "y": [1]},
+      {"x": [None]}, {"x": 1}], [1, 2, 4]),
+    ({"$and": [{"x": {"$elemMatch": {"$type": "int"}}}, {"x": {"$elemMatch": {"$type": "string"}}}]},
+     [{"x": [1, "a"]}, {"x": [1]}, {"x": ["a"]}, {"x": [1.5, "a"]}], [0]),
 ])
 def test_type_against_server(test_db, query, documents, hits):
     assert_matches(test_db, query, documents, hits)
