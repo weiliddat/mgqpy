@@ -34,7 +34,7 @@ INVALID_EXPRESSIONS = [
     {"$regex": "["}, {"$regex": 1}, {"$regex": "a", "$options": 1},
     {"$regex": "a\0b"},
     {"$regex": "a", "$options": "q"},
-    {"$regex": re.compile("a", re.I), "$options": "m"},
+    {"$regex": re.compile("a", re.IGNORECASE), "$options": "m"},
     {"$in": "bad"}, {"$nin": "bad"}, {"$in": [{"$gt": 1}]},
     {"$all": {}}, {"$elemMatch": 1}, {"$gt": 1, "a": 2},
     {"$elemMatch": []}, {"$elemMatch": {"$gt": 1, "a": 2}},
@@ -44,6 +44,9 @@ INVALID_EXPRESSIONS = [
     {"$elemMatch": {"$all": [{"$elemMatch": {"$gt": 1}}, 2]}},
     *[{op: re.compile("a")} for op in ("$ne", "$gt", "$gte", "$lt", "$lte")],
     {"$all": [1, {"$elemMatch": {"a": 1}}]},
+    {"$type": "missing"}, {"$type": "STRING"}, {"$type": ""}, {"$type": 0}, {"$type": 20},
+    {"$type": 2.5}, {"$type": float("nan")}, {"$type": True}, {"$type": None},
+    {"$type": []}, {"$type": [[2]]}, {"$type": ["string", "bad"]},
     {"$typo": 1},
 ]
 
@@ -75,11 +78,11 @@ def test_invalid_expressions_cannot_be_negated_into_matches(test_db, expression)
     {"x": {"$regex": "(?<name>a)"}},  # PCRE spelling is outside the Python re subset.
     {"x": {"$all": [{"$or": [{"a": 1}]}]}},
     {"x": {"$all": [{"$elemMatch": {"a": 1}}, 2]}},
-    {"$where": "this.x"}, {"x": {"$type": "string"}},
-    {"$or": [{}, {"x": {"$type": "string"}}]},
-    {"x": {"$not": {"$type": "string"}}},
-    {"x": {"$elemMatch": {"a": {"$type": "string"}}}},
-    {"x": {"$all": [{"$elemMatch": {"a": {"$type": "string"}}}]}},
+    {"$where": "this.x"}, {"x": {"$bitsAllSet": 1}},
+    {"$or": [{}, {"x": {"$bitsAllSet": 1}}]},
+    {"x": {"$not": {"$bitsAllSet": 1}}},
+    {"x": {"$elemMatch": {"a": {"$bitsAllSet": 1}}}},
+    {"x": {"$all": [{"$elemMatch": {"a": {"$bitsAllSet": 1}}}]}},
 ])
 def test_invalid_python_queries_and_unsupported_features(query):
     with pytest.raises(InvalidQuery):
