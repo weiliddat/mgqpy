@@ -8,6 +8,7 @@ from fractions import Fraction
 from uuid import UUID
 
 import pytest
+from bson import Code, Int64, ObjectId, Timestamp
 
 from mgqpy import Query
 
@@ -89,9 +90,14 @@ class Level(enum.IntEnum):
     (-2**63, {"long", "number"}),
     # Values PyMongo cannot encode, or encodes only by conversion, have no type.
     (2**63, set()), (Fraction(1, 2), set()), ((1,), set()), (object(), set()),
+    # Driver BSON classes get no special handling: subclasses use their Python
+    # base type (MongoDB would say "long" and "javascript"), others have no type.
+    (Int64(1), {"int", "number"}), (Code("f()"), {"string"}),
+    (ObjectId("507f1f77bcf86cd799439011"), set()), (Timestamp(1, 1), set()),
 ])
 def test_python_values(value, types):
     matched = {alias for alias in ("decimal", "number", "binData", "date", "int", "long",
-                                   "double", "array", "object", "string")
+                                   "double", "array", "object", "string", "objectId",
+                                   "timestamp", "javascript")
                if Query({"x": {"$type": alias}}).test({"x": value})}
     assert matched == types
